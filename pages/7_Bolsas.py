@@ -3,6 +3,7 @@ import pandas as pd
 import database as db
 import auth
 
+# Configuração da Página
 st.set_page_config(page_title="Gestão de Bolsas", layout="wide", page_icon="🎓")
 if not auth.validar_sessao(): auth.tela_login(); st.stop()
 auth.barra_lateral()
@@ -13,32 +14,22 @@ if not unidade_atual: st.error("Erro Unidade"); st.stop()
 st.title(f"🎓 Gestão de Bolsas - {st.session_state.get('unidade_nome')}")
 st.markdown("Acompanhe a vigência dos descontos ativos e o impacto financeiro na unidade.")
 
-conn = db.conectar()
-
-# Busca alunos com bolsa ativa (bolsa_ativa = 1 e matricula ativa = 1)
-query = '''
-    SELECT 
-        a.nome, 
-        m.disciplina, 
-        m.valor_acordado as valor_original,
-        m.bolsa_meses_restantes
-    FROM matriculas m
-    JOIN alunos a ON m.aluno_id = a.id
-    WHERE m.unidade_id = ? AND m.bolsa_ativa = 1 AND m.ativo = 1
-    ORDER BY m.bolsa_meses_restantes ASC
-'''
-df = pd.read_sql_query(query, conn, params=(unidade_atual,))
-conn.close()
+# 1. Busca Dados no Backend (Seguro)
+df = db.buscar_bolsas_ativas(unidade_atual)
 
 if not df.empty:
     # --- MÉTRICAS GERAIS ---
     total_bolsas = len(df)
-    # Cálculo do impacto: Soma dos valores originais * 50%
+    
+    # Cálculo do impacto: Soma dos valores originais * 50% (Regra visual)
     impacto_mensal = df['valor_original'].sum() * 0.5 
     
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Bolsistas", total_bolsas)
-    col2.metric("Impacto Mensal (Descontos)", f"R$ {impacto_mensal:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), delta="- Receita", delta_color="inverse")
+    
+    # Formatação manual BRL (ou use sua função format_brl se tiver importado)
+    str_impacto = f"R$ {impacto_mensal:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    col2.metric("Impacto Mensal (Descontos)", str_impacto, delta="- Receita", delta_color="inverse")
     
     st.divider()
     
@@ -60,7 +51,7 @@ if not df.empty:
                 help="Tempo até a bolsa expirar",
                 format="%d meses",
                 min_value=0,
-                max_value=12, # Define um teto visual (ex: 1 ano) para a barra ficar proporcional
+                max_value=12, # Teto visual para barra de progresso
             ),
         },
         hide_index=True,

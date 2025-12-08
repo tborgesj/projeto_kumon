@@ -137,37 +137,25 @@ with st.form("filtro_relatorio"):
     submit = st.form_submit_button("🔍 Pesquisar Alunos")
 
 # --- PROCESSAMENTO ---
+# --- PROCESSAMENTO ---
 if submit:
-    # 1. Atualiza memória (Salva o ÍNDICE para o próximo reload: valor 1 = index 0)
+    # 1. Atualiza memória (Salva o ÍNDICE para o próximo reload)
     st.session_state['rel_mes_idx'] = mes_sel_valor - 1
     st.session_state['rel_ano'] = ano_sel
     
+    # 2. Prepara as datas (Lógica de Interface)
     dt_inicio_mes = date(ano_sel, mes_sel_valor, 1)
     ultimo_dia = calendar.monthrange(ano_sel, mes_sel_valor)[1]
     dt_fim_mes = date(ano_sel, mes_sel_valor, ultimo_dia)
     
-    conn = db.conectar()
-    query = '''
-        SELECT 
-            a.nome as Aluno,
-            m.disciplina as Disciplina
-        FROM matriculas m
-        JOIN alunos a ON m.aluno_id = a.id
-        WHERE m.unidade_id = ?
-          AND a.nome IS NOT NULL 
-          AND m.aluno_id IS NOT NULL
-          AND m.data_inicio <= ? 
-          AND (m.ativo = 1 OR m.data_fim >= ?)
-        ORDER BY a.nome, m.disciplina
-    '''
-    df = pd.read_sql_query(query, conn, params=(unidade_atual, dt_fim_mes, dt_inicio_mes))
-    conn.close()
+    # 3. Busca Segura (Backend)
+    df = db.buscar_lista_alunos_periodo(unidade_atual, dt_inicio_mes, dt_fim_mes)
     
     if not df.empty:
         df = df.dropna(subset=['Aluno'])
         st.session_state['rel_df'] = df
     else:
-        st.session_state['rel_df'] = pd.DataFrame() # Vazio
+        st.session_state['rel_df'] = pd.DataFrame() # Garante Vazio
         st.warning("Nenhum aluno encontrado para os critérios selecionados.")
 
 # --- EXIBIÇÃO PERSISTENTE ---

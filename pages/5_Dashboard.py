@@ -29,61 +29,39 @@ conn = db.conectar()
 # --- CARREGAMENTO DE DADOS FINANCEIROS ---
 
 # A. Dados Financeiros por Mês (Para Gráficos)
-q_fin = f'''
-    SELECT mes_referencia, tipo, SUM(valor) as total
-    FROM (
-        SELECT mes_referencia, 'Receita' as tipo, valor_pago as valor FROM pagamentos WHERE mes_referencia LIKE '%{ano_sel}'
-        UNION ALL
-        SELECT mes_referencia, 'Despesa' as tipo, valor FROM despesas WHERE mes_referencia LIKE '%{ano_sel}'
-    )
-    GROUP BY mes_referencia, tipo
-'''
-df_fin = pd.read_sql_query(q_fin, conn)
+df_fin = db.buscar_dados_financeiros_anuais(unidade_atual, ano_sel)
 
-# B. Dados de Categoria (Para Pizza)
-q_cat = f'''
-    SELECT categoria, SUM(valor) as total 
-    FROM despesas 
-    WHERE mes_referencia LIKE '%{ano_sel}' 
-    GROUP BY categoria
-'''
-df_cat = pd.read_sql_query(q_cat, conn)
+# (O restante do código que usa df_fin para criar o gráfico continua igual...)
 
-# C. Dados de Matrículas (Alunos Ativos HOJE)
-q_mat = '''SELECT disciplina, COUNT(*) as qtd FROM matriculas WHERE ativo=1 GROUP BY disciplina'''
-df_mat = pd.read_sql_query(q_mat, conn)
-total_alunos_ativos = df_mat['qtd'].sum()
+# B. Dados de Categoria (Backend)
+df_cat = db.buscar_despesas_por_categoria(unidade_atual, ano_sel)
 
-# D. Inadimplência
-q_inad = f'''
-    SELECT 
-        SUM(valor_pago) as valor_total,
-        SUM(CASE WHEN status='PENDENTE' AND data_vencimento < DATE('now') THEN valor_pago ELSE 0 END) as valor_atrasado
-    FROM pagamentos
-    WHERE mes_referencia LIKE '%{ano_sel}'
-'''
-df_inad = pd.read_sql_query(q_inad, conn)
+# C. Dados de Matrículas (Backend)
+df_mat = db.buscar_distribuicao_matriculas(unidade_atual)
+# O cálculo de soma continua sendo feito com o DataFrame retornado
+total_alunos_ativos = df_mat['qtd'].sum() if not df_mat.empty else 0
+
+# D. Inadimplência (Backend)
+df_inad = db.buscar_indicadores_inadimplencia(unidade_atual, ano_sel)
+
+# ... (O restante do código que gera os gráficos continua igual) ...
+
 
 # E. Dados de RH (Pessoal)
 # Custo Total com Pessoal no Ano (Categoria 'Pessoal' + Custos associados na tabela despesas)
 # Nota: Assumimos que o Robô de RH lança na categoria 'Pessoal' ou 'Impostos' mas com descrição clara. 
 # Para simplificar e ser robusto, vamos somar a categoria 'Pessoal' que é onde lançamos salários e benefícios.
-q_rh_custo = f'''
-    SELECT SUM(valor) FROM despesas 
-    WHERE mes_referencia LIKE '%{ano_sel}' 
-    AND (categoria = 'Pessoal' OR categoria = 'Impostos')
-'''
-custo_pessoal_ano = conn.execute(q_rh_custo).fetchone()[0] or 0.0
+# 1. Custo RH (Pessoal + Impostos) - Backend
+custo_pessoal_ano = db.buscar_custo_rh_anual(unidade_atual, ano_sel)
 
-# Contagem de Funcionários Ativos
-qtd_funcionarios = conn.execute("SELECT COUNT(*) FROM funcionarios WHERE ativo=1").fetchone()[0] or 0
+# 2. Contagem de Funcionários - Backend
+qtd_funcionarios = db.contar_funcionarios_ativos(unidade_atual)
 
-# F. Contagem de Meses com Faturamento (Para o Ticket Médio correto)
-q_meses = f'''SELECT COUNT(DISTINCT mes_referencia) FROM pagamentos WHERE mes_referencia LIKE '%{ano_sel}' AND valor_pago > 0'''
-meses_faturados = conn.execute(q_meses).fetchone()[0]
-if meses_faturados == 0: meses_faturados = 1 # Evita divisão por zero
-
-conn.close()
+# 3. Meses Faturados (Para Ticket Médio) - Backend
+meses_faturados = db.contar_meses_com_faturamento(unidade_atual, ano_sel)
+# Proteção contra divisão por zero (Lógica de Interface)
+if meses_faturados == 0: 
+    meses_faturados = 1
 
 # --- CÁLCULO DE KPIS GERAIS ---
 receita_ano = df_fin[df_fin['tipo']=='Receita']['total'].sum()

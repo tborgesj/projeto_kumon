@@ -3,6 +3,7 @@ import pandas as pd
 import database as db
 import auth
 from datetime import datetime, date
+import time
 
 st.set_page_config(page_title="Cofres Inteligentes", layout="wide", page_icon="🏦")
 if not auth.validar_sessao(): auth.tela_login(); st.stop()
@@ -29,40 +30,44 @@ def popup_distribuir(lucro_disponivel, df_cofres):
     st.caption("Ajuste os valores se necessário. O padrão segue suas regras de %.")
     
     input_vals = {}
-    total_alocado = 0.0
     
     with st.form("form_dist"):
+        # Interface de Cálculo
         for index, row in df_cofres.iterrows():
             perc = row['percentual_padrao']
+            # Calcula sugestão baseado no % cadastrado
             valor_sugerido = (lucro_disponivel * perc) / 100
             
             c1, c2 = st.columns([3, 2])
             c1.write(f"**{row['nome']}** ({perc}%)")
-            input_vals[row['id']] = c2.number_input(f"Valor (R$)", value=float(valor_sugerido), step=10.0, key=f"d_{row['id']}")
-            total_alocado += input_vals[row['id']]
+            
+            # Coleta o input do usuário (que pode alterar a sugestão)
+            input_vals[row['id']] = c2.number_input(
+                f"Valor (R$)", 
+                value=float(valor_sugerido), 
+                step=10.0, 
+                key=f"d_{row['id']}"
+            )
         
+        # Mostra total visualmente
+        total_alocado = sum(input_vals.values())
         st.divider()
-        st.markdown(f"**Total Alocado:** {format_brl(sum(input_vals.values()))}")
+        st.markdown(f"**Total Alocado:** {format_brl(total_alocado)}")
+        
+        if total_alocado > lucro_disponivel:
+            st.warning("⚠️ Atenção: Você está alocando mais do que o lucro disponível.")
         
         if st.form_submit_button("✅ Confirmar Distribuição"):
-            conn = db.conectar()
             try:
-                hoje = date.today()
-                for cid, val in input_vals.items():
-                    if val > 0:
-                        # 1. Atualiza Saldo
-                        conn.execute("UPDATE cofres_saldo SET saldo_atual = saldo_atual + ? WHERE cofre_id=? AND unidade_id=?", 
-                                     (val, cid, unidade_atual))
-                        # 2. Registra Histórico
-                        conn.execute("INSERT INTO cofres_movimentacao (unidade_id, cofre_id, data_movimentacao, valor, tipo, descricao) VALUES (?, ?, ?, ?, 'ENTRADA', 'Distribuição de Lucro')", 
-                                     (unidade_atual, cid, hoje, val))
-                conn.commit()
+                # Chama a função de lote do backend
+                db.realizar_distribuicao_lucro(st.session_state['unidade_ativa'], input_vals)
+                
                 st.success("Lucro guardado nos cofres com sucesso!")
+                time.sleep(1)
                 st.rerun()
+                
             except Exception as e:
-                st.error(f"Erro: {e}")
-            finally:
-                conn.close()
+                st.error(f"Erro ao distribuir: {e}")
 
 # --- POPUP DE SAQUE/USO ---
 @st.dialog("Utilizar Recurso do Cofre")
@@ -76,47 +81,34 @@ def popup_saque(cofre_id, nome_cofre, saldo_atual):
         
         if st.form_submit_button("📉 Confirmar Uso"):
             if not motivo:
-                st.error("Informe o motivo.")
+                st.error("Informe o motivo da utilização do recurso.")
             else:
-                conn = db.conectar()
                 try:
-                    # 1. Debita Saldo
-                    conn.execute("UPDATE cofres_saldo SET saldo_atual = saldo_atual - ? WHERE cofre_id=? AND unidade_id=?", 
-                                 (valor, cofre_id, unidade_atual))
-                    # 2. Histórico
-                    conn.execute("INSERT INTO cofres_movimentacao (unidade_id, cofre_id, data_movimentacao, valor, tipo, descricao) VALUES (?, ?, DATE('now'), ?, 'SAIDA', ?)", 
-                                 (unidade_atual, cofre_id, valor, motivo))
-                    conn.commit()
-                    st.success("Saque registrado!")
+                    # Recupera ID da unidade da sessão para segurança
+                    unidade_atual = st.session_state.get('unidade_ativa')
+                    
+                    # Chama a função segura do backend
+                    db.realizar_saque_cofre(unidade_atual, cofre_id, valor, motivo)
+                    
+                    st.success("Saque registrado com sucesso!")
+                    time.sleep(1)
                     st.rerun()
-                except Exception as e: st.error(e)
-                finally: conn.close()
+                except Exception as e:
+                    st.error(f"Erro ao realizar saque: {e}")
 
-# --- LÓGICA PRINCIPAL ---
-conn = db.conectar()
+# --- LÓGICA PRINCIPAL (Separada) ---
 
-# 1. Busca Dados dos Cofres
-q_cofres = '''
-    SELECT c.id, c.nome, c.percentual_padrao, c.descricao, s.saldo_atual 
-    FROM cofres c 
-    JOIN cofres_saldo s ON c.id = s.cofre_id 
-    WHERE c.unidade_id = ?
-'''
-df_cofres = pd.read_sql_query(q_cofres, conn, params=(unidade_atual,))
+# 1. Busca Dados dos Cofres (Backend)
+df_cofres = db.buscar_cofres_com_saldo(unidade_atual)
 
-# 2. Calcula Lucro do Mês Anterior (Para sugestão)
+# 2. Calcula Lucro do Mês Anterior (Lógica de Data + Backend)
 hj = datetime.now()
+# Pega o primeiro dia deste mês e volta um dia para cair no mês anterior
 mes_ant_date = (hj.replace(day=1) - pd.DateOffset(days=1))
 mes_ant_str = mes_ant_date.strftime("%m/%Y")
 
-# Receita PAGA
-rec = conn.execute("SELECT SUM(valor_pago) FROM pagamentos WHERE mes_referencia=? AND status='PAGO' AND unidade_id=?", (mes_ant_str, unidade_atual)).fetchone()[0] or 0.0
-# Despesa PAGA
-des = conn.execute("SELECT SUM(valor) FROM despesas WHERE mes_referencia=? AND status='PAGO' AND unidade_id=?", (mes_ant_str, unidade_atual)).fetchone()[0] or 0.0
-lucro_sugerido = rec - des
-if lucro_sugerido < 0: lucro_sugerido = 0.0
-
-conn.close()
+# Chama a "Fórmula Oficial" do lucro
+lucro_sugerido = db.calcular_lucro_realizado(unidade_atual, mes_ant_str)
 
 tab1, tab2, tab3 = st.tabs(["📊 Dashboard & Distribuição", "⚙️ Configurar Regras", "📜 Extrato"])
 
@@ -143,7 +135,8 @@ with tab1:
     
     c_sim1, c_sim2 = st.columns([2, 1])
     with c_sim1:
-        st.info(f"Lucro Realizado do mês passado ({mes_ant_str}): **{format_brl(rec - des)}**")
+        # Usamos 'lucro_sugerido', que já calculamos logo acima usando a função do banco
+        st.info(f"Lucro Realizado do mês passado ({mes_ant_str}): **{format_brl(lucro_sugerido)}**")
         val_dist = st.number_input("Quanto deseja distribuir agora?", value=float(lucro_sugerido), min_value=0.0, step=100.0)
     
     with c_sim2:
@@ -162,52 +155,72 @@ with tab2:
     st.caption("A soma das porcentagens deve ser idealmente 100%.")
     
     with st.form("config_cofres"):
-        conn = db.conectar()
-        # Input editável para cada cofre
+        # Dicionário para guardar os inputs do usuário
         novos_percs = {}
-        total_perc = 0
+        total_perc = 0.0
         
-        for index, row in df_cofres.iterrows():
-            c1, c2 = st.columns([3, 1])
-            c1.markdown(f"**{row['nome']}**")
-            c1.caption(row['descricao'])
-            val = c2.number_input(f"% Alocação", value=float(row['percentual_padrao']), min_value=0.0, max_value=100.0, step=1.0, key=f"cfg_{row['id']}")
-            novos_percs[row['id']] = val
-            total_perc += val
-            st.markdown("---")
-            
-        st.markdown(f"**Total Configurado: {total_perc:.1f}%**")
+        # Itera sobre os dados carregados anteriormente (df_cofres)
+        if not df_cofres.empty:
+            for index, row in df_cofres.iterrows():
+                c1, c2 = st.columns([3, 1])
+                c1.markdown(f"**{row['nome']}**")
+                c1.caption(row['descricao'])
+                
+                val = c2.number_input(
+                    f"% Alocação", 
+                    value=float(row['percentual_padrao']), 
+                    min_value=0.0, 
+                    max_value=100.0, 
+                    step=1.0, 
+                    key=f"cfg_{row['id']}"
+                )
+                
+                novos_percs[row['id']] = val
+                total_perc += val
+                st.markdown("---")
+        
+        # Feedback Visual do Total
+        cor_total = "green" if total_perc == 100 else "orange"
+        st.markdown(f"**Total Configurado:** :{cor_total}[{total_perc:.1f}%]")
+        
         if total_perc != 100:
-            st.warning("Atenção: A soma não é 100%. Verifique se é intencional.")
+            st.warning("⚠️ A soma não é 100%. Verifique se é intencional.")
             
         if st.form_submit_button("💾 Salvar Novas Regras"):
             try:
-                for cid, perc in novos_percs.items():
-                    conn.execute("UPDATE cofres SET percentual_padrao=? WHERE id=?", (perc, cid))
-                conn.commit()
-                st.success("Regras atualizadas!")
+                # Chama a função segura do backend
+                db.atualizar_percentuais_cofres(novos_percs)
+                
+                st.success("Regras atualizadas com sucesso!")
+                time.sleep(1)
                 st.rerun()
-            except Exception as e: st.error(e)
-            finally: conn.close()
+                
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
 
 # ==============================================================================
 # TAB 3: EXTRATO
 # ==============================================================================
 with tab3:
     st.subheader("Histórico de Movimentações")
-    conn = db.conectar()
-    hist = pd.read_sql_query('''
-        SELECT m.data_movimentacao, c.nome, m.tipo, m.valor, m.descricao 
-        FROM cofres_movimentacao m 
-        JOIN cofres c ON m.cofre_id = c.id 
-        WHERE m.unidade_id = ? 
-        ORDER BY m.id DESC
-    ''', conn, params=(unidade_atual,))
-    conn.close()
+    
+    # 1. Busca Segura (Backend)
+    hist = db.buscar_historico_movimentacoes_cofres(unidade_atual)
     
     if not hist.empty:
-        # Formatação
-        hist['valor'] = hist['valor'].apply(format_brl)
-        st.dataframe(hist.style.map(lambda x: f'color: {"green" if x=="ENTRADA" else "red"}', subset=['tipo']), use_container_width=True)
+        # 2. Formatação Visual (Frontend)
+        # Trabalhamos numa cópia para não afetar os dados brutos caso precise usar depois
+        hist_visual = hist.copy()
+        
+        hist_visual['valor'] = hist_visual['valor'].apply(format_brl)
+        
+        # Estilização condicional (Verde/Vermelho)
+        st.dataframe(
+            hist_visual.style.map(
+                lambda x: f'color: {"green" if x=="ENTRADA" else "red"}', 
+                subset=['tipo']
+            ), 
+            use_container_width=True
+        )
     else:
         st.info("Nenhuma movimentação registrada ainda.")

@@ -7,29 +7,28 @@ import hashlib
 st.set_page_config(page_title="Admin Usuários", layout="wide", page_icon="🔐")
 if not auth.validar_sessao(): auth.tela_login(); st.stop()
 
-# Segurança: Apenas Admin acessa
-if not st.session_state.get('is_admin'):
-    st.error("Acesso negado. Apenas administradores.")
+# Segurança: Verifica se é admin usando a chave correta definida no auth.py
+if not st.session_state.get('usuario_admin'):
+    st.error("⛔ Acesso negado. Esta área é restrita a administradores.")
     auth.barra_lateral()
     st.stop()
 
 auth.barra_lateral()
 st.title("🔐 Gestão de Usuários e Acessos")
 
-# --- POPUP DE SUCESSO (REQUISITO 3) ---
+# --- POPUP DE SUCESSO ---
 @st.dialog("Sucesso!")
 def show_success_modal(mensagem):
     st.success(mensagem)
     if st.button("OK"):
         st.rerun()
 
-conn = db.conectar()
-
 tab1, tab2 = st.tabs(["Novo Usuário", "Gerenciar Usuários"])
 
-# LISTA TODAS UNIDADES PARA O CHECKBOX
-todas_unidades = conn.execute("SELECT id, nome FROM unidades").fetchall()
+# Carrega lista de unidades para os formulários (Backend)
+todas_unidades = db.buscar_todas_unidades()
 
+# --- ABA 1: NOVO USUÁRIO ---
 with tab1:
     st.subheader("Cadastrar Novo Usuário")
     with st.form("new_user_form", clear_on_submit=True):
@@ -42,7 +41,10 @@ with tab1:
         st.markdown("**Unidades Permitidas:**")
         cols_u = st.columns(4)
         selected_units = []
+        
+        # Gera checkboxes dinamicamente
         for i, u in enumerate(todas_unidades):
+            # u[0] = id, u[1] = nome
             with cols_u[i % 4]:
                 if st.checkbox(u[1], key=f"new_u_{u[0]}"):
                     selected_units.append(u[0])
@@ -52,75 +54,90 @@ with tab1:
                 st.error("Preencha login, senha e selecione pelo menos uma unidade.")
             else:
                 try:
-                    # 1. Cria User
-                    p_hash = hashlib.sha256(new_user.encode()).hexdigest() # Criptografa user para usar de salt simples ou senha direta
+                    # Gera Hash da Senha
                     p_hash = hashlib.sha256(new_pass.encode()).hexdigest()
                     
-                    conn.execute("INSERT INTO usuarios (username, password_hash, nome_completo, admin, ativo) VALUES (?,?,?,?,1)",
-                                 (new_user, p_hash, new_nome, 1 if is_adm else 0))
+                    # Chama função transacional do Backend
+                    db.criar_usuario_completo(
+                        username=new_user, 
+                        password_hash=p_hash, 
+                        nome=new_nome, 
+                        is_admin=is_adm, 
+                        lista_unidades_ids=selected_units
+                    )
                     
-                    # 2. Vincula Unidades
-                    for uid in selected_units:
-                        conn.execute("INSERT INTO usuario_unidades (usuario_username, unidade_id) VALUES (?,?)", (new_user, uid))
-                    
-                    conn.commit()
-                    # Chama o Popup
                     show_success_modal(f"Usuário {new_user} criado com sucesso!")
                     
                 except Exception as e:
-                    st.error(f"Erro (talvez usuário já exista): {e}")
+                    st.error(f"Erro ao criar usuário (verifique se o login já existe): {e}")
 
+# --- ABA 2: EDITAR USUÁRIO ---
 with tab2:
     st.subheader("Editar Usuários")
-    users = pd.read_sql("SELECT username, nome_completo, admin, ativo FROM usuarios", conn)
     
-    sel_user = st.selectbox("Selecione para editar:", users['username'].tolist(), format_func=lambda x: f"{x} - {users[users['username']==x]['nome_completo'].values[0]}")
+    # Busca lista de usuários (Backend)
+    users = db.buscar_lista_usuarios()
     
-    if sel_user:
-        u_data = users[users['username']==sel_user].iloc[0]
-        st.divider()
+    if not users.empty:
+        sel_user = st.selectbox(
+            "Selecione para editar:", 
+            users['username'].tolist(), 
+            format_func=lambda x: f"{x} - {users[users['username']==x]['nome_completo'].values[0]}"
+        )
         
-        # Unidades atuais dele
-        current_units_res = conn.execute("SELECT unidade_id FROM usuario_unidades WHERE usuario_username=?", (sel_user,)).fetchall()
-        current_units_ids = [r[0] for r in current_units_res]
-
-        with st.form("edit_user"):
-            ce1, ce2 = st.columns(2)
-            enome = ce1.text_input("Nome", value=u_data['nome_completo'])
-            eativo = ce2.checkbox("Ativo?", value=bool(u_data['ativo']))
-            eadmin = ce1.checkbox("Administrador?", value=bool(u_data['admin']))
-            enova_senha = ce2.text_input("Resetar Senha (deixe vazio para manter)", type="password")
+        if sel_user:
+            # Pega dados do DataFrame carregado
+            u_data = users[users['username']==sel_user].iloc[0]
+            st.divider()
             
-            st.markdown("**Acesso às Unidades:**")
-            ecols = st.columns(4)
-            final_units = []
-            for i, u in enumerate(todas_unidades):
-                with ecols[i % 4]:
-                    # Checkbox vem marcado se ele já tem a unidade
-                    checked = u[0] in current_units_ids
-                    if st.checkbox(u[1], value=checked, key=f"edit_u_{u[0]}"):
-                        final_units.append(u[0])
+            # Busca unidades atuais deste usuário (Backend)
+            current_units_ids = db.buscar_ids_unidades_usuario(sel_user)
 
-            if st.form_submit_button("Salvar Alterações"):
-                if not final_units:
-                    st.error("O usuário deve ter pelo menos uma unidade.")
-                else:
-                    # Atualiza dados básicos
-                    conn.execute("UPDATE usuarios SET nome_completo=?, admin=?, ativo=? WHERE username=?", 
-                                 (enome, 1 if eadmin else 0, 1 if eativo else 0, sel_user))
-                    
-                    # Atualiza Senha se digitou
-                    if enova_senha:
-                        nhash = hashlib.sha256(enova_senha.encode()).hexdigest()
-                        conn.execute("UPDATE usuarios SET password_hash=? WHERE username=?", (nhash, sel_user))
-                        st.info("Senha alterada.")
-                    
-                    # Atualiza Unidades (Apaga tudo e recria)
-                    conn.execute("DELETE FROM usuario_unidades WHERE usuario_username=?", (sel_user,))
-                    for uid in final_units:
-                        conn.execute("INSERT INTO usuario_unidades (usuario_username, unidade_id) VALUES (?,?)", (sel_user, uid))
-                    
-                    conn.commit()
-                    show_success_modal("Usuário atualizado com sucesso!")
+            with st.form("edit_user"):
+                ce1, ce2 = st.columns(2)
+                enome = ce1.text_input("Nome", value=u_data['nome_completo'])
+                eativo = ce2.checkbox("Ativo?", value=bool(u_data['ativo']))
+                eadmin = ce1.checkbox("Administrador?", value=bool(u_data['admin']))
+                enova_senha = ce2.text_input("Resetar Senha (deixe vazio para manter)", type="password")
+                
+                st.markdown("**Acesso às Unidades:**")
+                ecols = st.columns(4)
+                final_units = []
+                
+                for i, u in enumerate(todas_unidades):
+                    with ecols[i % 4]:
+                        # Marca se já estiver na lista do usuário
+                        is_checked = u[0] in current_units_ids
+                        
+                        # CORREÇÃO: Adicionamos 'sel_user' na key.
+                        # Isso força o Streamlit a resetar o checkbox quando trocamos de usuário.
+                        if st.checkbox(u[1], value=is_checked, key=f"edit_u_{u[0]}_{sel_user}"):
+                            final_units.append(u[0])
 
-conn.close()
+                if st.form_submit_button("Salvar Alterações"):
+                    if not final_units:
+                        st.error("O usuário deve ter permissão em pelo menos uma unidade.")
+                    else:
+                        try:
+                            # Prepara hash apenas se houve troca de senha
+                            nhash = hashlib.sha256(enova_senha.encode()).hexdigest() if enova_senha else None
+                            
+                            # Chama função transacional do Backend
+                            db.atualizar_usuario_completo(
+                                username=sel_user,
+                                nome=enome,
+                                is_admin=eadmin,
+                                is_ativo=eativo,
+                                lista_unidades_ids=final_units,
+                                nova_password_hash=nhash
+                            )
+                            
+                            if enova_senha:
+                                st.info("Senha alterada no processo.")
+                                
+                            show_success_modal("Usuário atualizado com sucesso!")
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar: {e}")
+    else:
+        st.info("Nenhum usuário cadastrado.")
