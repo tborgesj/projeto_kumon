@@ -151,38 +151,16 @@ CREATE TABLE IF NOT EXISTS cofres_movimentacao (
             descricao TEXT,
             FOREIGN KEY (cofre_id) REFERENCES cofres (id));
 
-INSERT OR IGNORE INTO unidades (id, nome) VALUES (1, 'Kumon - Matriz')
-INSERT OR IGNORE INTO unidades (id, nome) VALUES (2, 'Kumon - Filial Centro')
+INSERT OR IGNORE INTO unidades (id, nome) VALUES (1, 'Kumon - Matriz');
+INSERT OR IGNORE INTO unidades (id, nome) VALUES (2, 'Kumon - Filial Centro');
 
-def criar_tabelas() -> None:
+INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 1);
+INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 2)
 
-        cursor.execute("SELECT * FROM usuarios WHERE username = 'admin'")
-        if not cursor.fetchone():
-            senha_hash = hashlib.sha256("Asdke1234".encode()).hexdigest()
-            cursor.execute("INSERT INTO usuarios (username, password_hash, nome_completo, admin, ativo) VALUES (?, ?, ?, 1, 1)", 
-                           ('admin', senha_hash, 'Administrador Master'))
-            cursor.execute("INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 1)")
-            cursor.execute("INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 2)")
-            
-            cursor.execute("INSERT OR IGNORE INTO parametros (unidade_id, em_campanha_matricula, valor_taxa_matricula, valor_mensalidade_padrao) VALUES (1, 0, 50.00, 350.00)")
-            cursor.execute("INSERT OR IGNORE INTO parametros (unidade_id, em_campanha_matricula, valor_taxa_matricula, valor_mensalidade_padrao) VALUES (2, 0, 0.00, 320.00)")
-            
-            for uid in [1, 2]:
-                cofres_padrao = [
-                    ("13º Salário e Férias", 15.00, "Provisão Trabalhista Obrigatória"),
-                    ("Fundo de Emergência", 10.00, "Reserva para crises"),
-                    ("Capital de Giro", 15.00, "Dinheiro para rodar o mês"),
-                    ("Investimentos", 10.00, "Marketing, Reformas"),
-                    ("Lucro Livre (Sócios)", 50.00, "Disponível para retirada")
-                ]
-                for nome, perc, desc in cofres_padrao:
-                    cursor.execute("INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (?, ?, ?, ?)", (uid, nome, perc, desc))
-                    cid = cursor.lastrowid
-                    cursor.execute("INSERT OR IGNORE INTO cofres_saldo (unidade_id, cofre_id, saldo_atual) VALUES (?, ?, 0.00)", (uid, cid))
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, '13º Salário e Férias', 15.00, 'Provisão Trabalhista Obrigatória');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Fundo de Emergência', 10.00, 'Reserva para crises');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Capital de Giro', 15.00, 'Dinheiro para rodar o mês');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Investimentos', 10.00, 'Marketing, Reformas');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Lucro Livre (Sócios)', 50.00, 'Disponível para retirada');
 
-        conn.commit()
-    except Exception as e:
-        logger.exception("Erro ao criar tabelas")
-        raise
-    finally:
-        conn.close()
+INSERT OR IGNORE INTO cofres_saldo (unidade_id, cofre_id, saldo_atual) VALUES (1, 1, 0.00);
