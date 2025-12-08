@@ -6,6 +6,7 @@ from datetime import datetime, date, timedelta
 import calendar
 import io
 import re
+import time
 
 # Tenta importar docxtpl para gerar contratos
 try:
@@ -307,12 +308,32 @@ with tab2:
                 e_chn = ec4.selectbox("Canal", canais_aquisicao, index=idx_c)
                 
                 if st.form_submit_button("Salvar Alterações"):
+                    # 1. Validação (Lógica de Interface)
                     cpfc = limpar_cpf(e_cpf)
-                    if cpfc and not validar_cpf(cpfc): st.error("CPF Inválido!")
+                    
+                    if cpfc and not validar_cpf(cpfc):
+                        st.error("CPF Inválido!")
                     else:
-                        conn.execute("UPDATE alunos SET nome=?, responsavel_nome=?, cpf_responsavel=?, canal_aquisicao=? WHERE id=?", 
-                                     (e_nome, e_resp, formatar_cpf(cpfc), e_chn, sel))
-                        conn.commit(); show_success("Atualizado!")
+                        try:
+                            # Prepara o dado antes de enviar
+                            cpf_final = formatar_cpf(cpfc) if cpfc else ""
+                            
+                            # 2. Chama a função segura do Banco
+                            db.atualizar_aluno(
+                                aluno_id=sel,
+                                nome=e_nome,
+                                responsavel=e_resp,
+                                cpf=cpf_final,
+                                canal=e_chn
+                            )
+                            
+                            st.success("Atualizado com sucesso!")
+                            time.sleep(1) # Dá tempo do usuário ler
+                            st.rerun()    # Atualiza a tela com os dados novos
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar dados: {e}")
+                
         
         st.divider()
         st.subheader("Disciplinas")
@@ -324,11 +345,20 @@ with tab2:
                 av = ac2.number_input("Valor", value=VALOR_PADRAO)
                 adi = ac3.number_input("Dia", 1, 31, 10)
                 if st.form_submit_button("Salvar"):
-                    cur = conn.execute("INSERT INTO matriculas (unidade_id, aluno_id, disciplina, valor_acordado, dia_vencimento, data_inicio, ativo) VALUES (?,?,?,?,?,DATE('now'),1)", (unidade_atual, sel, ad, av, adi))
-                    mid = cur.lastrowid
-                    hj = datetime.now(); mr = f"{hj.month:02d}/{hj.year}"
-                    conn.execute("INSERT INTO pagamentos (unidade_id, matricula_id, aluno_id, mes_referencia, data_vencimento, valor_pago, status) VALUES (?,?,?,?,?,?,'PENDENTE')", (unidade_atual, mid, sel, mr, get_valid_date(hj.year, hj.month, adi), av))
-                    conn.commit(); show_success("Adicionado!")
+                    try:
+                        # Chama a função blindada do database
+                        db.adicionar_matricula_completa(
+                            unidade_id=unidade_atual,
+                            aluno_id=sel, # Assumindo que 'sel' é o ID do aluno selecionado
+                            disciplina=ad,
+                            valor=av,
+                            dia_vencimento=adi
+                        )
+                        st.success("Adicionado com sucesso!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
         
         # Listagem Matriculas
         for m in mats:

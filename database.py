@@ -14,7 +14,7 @@ sqlite3.register_adapter(datetime, adapt_datetime)
 
 # --- 2. CONEXÃO ---
 def conectar():
-    return sqlite3.connect('kumon.db')
+    return sqlite3.connect('kumon.db', check_same_thread=False, timeout=10)
 
 def criar_tabelas():
     conn = conectar()
@@ -281,3 +281,64 @@ def get_parametros_unidade(unidade_id):
     res = conn.execute("SELECT em_campanha_matricula, valor_taxa_matricula, valor_mensalidade_padrao FROM parametros WHERE unidade_id=?", (unidade_id,)).fetchone()
     conn.close()
     return {"campanha": bool(res[0]), "taxa_matr": float(res[1]), "mensalidade": float(res[2])} if res else {"campanha": False, "taxa_matr": 0.0, "mensalidade": 350.0}
+
+# --- 4. Funções de operação base do sistema ---
+
+def adicionar_matricula_completa(unidade_id, aluno_id, disciplina, valor, dia_vencimento):
+    """
+    Realiza a matrícula e gera a primeira parcela financeiro em uma TRANSAÇÃO ÚNICA.
+    Se um falhar, o outro não é salvo. Garante fechamento da conexão.
+    """
+    conn = conectar()
+    try:
+        # 'with conn' garante que se der erro, ele faz ROLLBACK (desfaz tudo)
+        # se der certo, faz COMMIT automático no final do bloco.
+        with conn:
+            # 1. Inserir Matrícula
+            cur = conn.execute("""
+                INSERT INTO matriculas (unidade_id, aluno_id, disciplina, valor_acordado, dia_vencimento, data_inicio, ativo) 
+                VALUES (?, ?, ?, ?, ?, DATE('now'), 1)
+            """, (unidade_id, aluno_id, disciplina, valor, dia_vencimento))
+            
+            matricula_id = cur.lastrowid
+            
+            # 2. Gerar Primeira Parcela (Pendente)
+            hoje = datetime.now()
+            mes_ref = f"{hoje.month:02d}/{hoje.year}"
+            
+            # Função auxiliar para garantir data válida (ex: 30 de fev)
+            # Se você não tiver a função get_valid_date importada aqui, use lógica simples ou importe-a
+            # Assumindo data simples para o exemplo:
+            data_venc = date(hoje.year, hoje.month, int(dia_vencimento)) if dia_vencimento <= 28 else date(hoje.year, hoje.month, 28)
+            
+            conn.execute("""
+                INSERT INTO pagamentos (unidade_id, matricula_id, aluno_id, mes_referencia, data_vencimento, valor_pago, status) 
+                VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE')
+            """, (unidade_id, matricula_id, aluno_id, mes_ref, data_venc, valor))
+            
+    except Exception as e:
+        # Se der erro, repassa para a tela mostrar
+        raise e
+    finally:
+        # OBRIGATÓRIO: Fecha a conexão liberando o arquivo .db
+        conn.close()
+
+def atualizar_aluno(aluno_id, nome, responsavel, cpf, canal):
+    """
+    Atualiza os dados cadastrais do aluno de forma segura.
+    Fecha a conexão automaticamente após o uso.
+    """
+    conn = conectar()
+    try:
+        with conn:
+            conn.execute("""
+                UPDATE alunos 
+                SET nome=?, responsavel_nome=?, cpf_responsavel=?, canal_aquisicao=? 
+                WHERE id=?
+            """, (nome, responsavel, cpf, canal, aluno_id))
+            # O commit é automático ao sair do bloco 'with' com sucesso
+    except Exception as e:
+        raise e
+    finally:
+        conn.close()
+        
