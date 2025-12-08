@@ -1,0 +1,77 @@
+import streamlit as st
+import pandas as pd
+import database as db
+import auth
+
+st.set_page_config(page_title="Gestão de Bolsas", layout="wide", page_icon="🎓")
+if not auth.validar_sessao(): auth.tela_login(); st.stop()
+auth.barra_lateral()
+
+unidade_atual = st.session_state.get('unidade_ativa')
+if not unidade_atual: st.error("Erro Unidade"); st.stop()
+
+st.title(f"🎓 Gestão de Bolsas - {st.session_state.get('unidade_nome')}")
+st.markdown("Acompanhe a vigência dos descontos ativos e o impacto financeiro na unidade.")
+
+conn = db.conectar()
+
+# Busca alunos com bolsa ativa (bolsa_ativa = 1 e matricula ativa = 1)
+query = '''
+    SELECT 
+        a.nome, 
+        m.disciplina, 
+        m.valor_acordado as valor_original,
+        m.bolsa_meses_restantes
+    FROM matriculas m
+    JOIN alunos a ON m.aluno_id = a.id
+    WHERE m.unidade_id = ? AND m.bolsa_ativa = 1 AND m.ativo = 1
+    ORDER BY m.bolsa_meses_restantes ASC
+'''
+df = pd.read_sql_query(query, conn, params=(unidade_atual,))
+conn.close()
+
+if not df.empty:
+    # --- MÉTRICAS GERAIS ---
+    total_bolsas = len(df)
+    # Cálculo do impacto: Soma dos valores originais * 50%
+    impacto_mensal = df['valor_original'].sum() * 0.5 
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total de Bolsistas", total_bolsas)
+    col2.metric("Impacto Mensal (Descontos)", f"R$ {impacto_mensal:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), delta="- Receita", delta_color="inverse")
+    
+    st.divider()
+    
+    # --- TABELA VISUAL ---
+    st.subheader("Prazos de Vigência")
+    st.caption("Quando o contador chegar a zero, o desconto será removido automaticamente pelo robô financeiro.")
+    
+    st.dataframe(
+        df,
+        column_config={
+            "nome": "Aluno",
+            "disciplina": "Disciplina",
+            "valor_original": st.column_config.NumberColumn(
+                "Valor Cheio", 
+                format="R$ %.2f"
+            ),
+            "bolsa_meses_restantes": st.column_config.ProgressColumn(
+                "Meses Restantes",
+                help="Tempo até a bolsa expirar",
+                format="%d meses",
+                min_value=0,
+                max_value=12, # Define um teto visual (ex: 1 ano) para a barra ficar proporcional
+            ),
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+
+else:
+    st.info("ℹ️ Nenhuma bolsa de estudos ativa no momento.")
+    st.markdown("""
+    Para conceder uma bolsa:
+    1. Vá em **Gerenciar Alunos**.
+    2. Selecione o aluno e localize a disciplina.
+    3. Clique no botão **🎓 Conceder Bolsa**.
+    """)
