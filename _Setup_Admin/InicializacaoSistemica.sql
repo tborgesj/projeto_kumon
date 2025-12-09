@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS usuario_unidades (
 CREATE TABLE IF NOT EXISTS parametros (
             unidade_id INTEGER PRIMARY KEY,
             em_campanha_matricula BOOLEAN DEFAULT 0,
-            valor_taxa_matricula DECIMAL(10,2) DEFAULT 0.00,
-            valor_mensalidade_padrao DECIMAL(10,2) DEFAULT 350.00,
+            valor_taxa_matricula INTEGER DEFAULT 0,
+            valor_mensalidade_padrao INTEGER DEFAULT 350,
             FOREIGN KEY (unidade_id) REFERENCES unidades (id));
 
 CREATE TABLE IF NOT EXISTS categorias_despesas (
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS categorias_despesas (
 CREATE TABLE IF NOT EXISTS config_royalties (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id INTEGER NOT NULL,
-            valor DECIMAL(10,2),
+            valor INTEGER,
             ano_mes_inicio TEXT,
             ano_mes_fim TEXT,
             FOREIGN KEY (unidade_id) REFERENCES unidades (id));
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS matriculas (
             aluno_id INTEGER,
             disciplina TEXT NOT NULL,
             data_inicio DATE,
-            valor_acordado DECIMAL(10,2) NOT NULL,
+            valor_acordado INTEGER NOT NULL,
             dia_vencimento INTEGER DEFAULT 10,
             justificativa_desconto TEXT,
             ativo BOOLEAN DEFAULT 1,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS pagamentos (
             matricula_id INTEGER,
             aluno_id INTEGER,
             mes_referencia TEXT,
-            valor_pago DECIMAL(10,2),
+            valor_pago INTEGER,
             data_vencimento DATE,
             data_pagamento DATE,
             status TEXT,
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS despesas_recorrentes (
             unidade_id INTEGER NOT NULL,
             categoria TEXT,
             descricao TEXT,
-            valor DECIMAL(10,2),
+            valor INTEGER,
             dia_vencimento INTEGER,
             limite_meses INTEGER,
             data_criacao DATE,
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS despesas (
             recorrente_id INTEGER,
             categoria TEXT,
             descricao TEXT,
-            valor DECIMAL(10,2),
+            valor INTEGER,
             data_vencimento DATE,
             mes_referencia TEXT,
             data_pagamento DATE,
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS funcionarios (
             unidade_id INTEGER NOT NULL,
             nome TEXT NOT NULL,
             tipo_contratacao TEXT,
-            salario_base DECIMAL(10,2),
+            salario_base INTEGER,
             data_contratacao DATE,
             dia_pagamento_salario INTEGER,
             ativo BOOLEAN DEFAULT 1,
@@ -123,21 +123,21 @@ CREATE TABLE IF NOT EXISTS custos_pessoal (
             funcionario_id INTEGER,
             tipo_item TEXT, 
             nome_item TEXT,
-            valor DECIMAL(10,2),
+            valor INTEGER,
             dia_vencimento INTEGER);
 
 CREATE TABLE IF NOT EXISTS cofres (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id INTEGER NOT NULL,
             nome TEXT NOT NULL,
-            percentual_padrao DECIMAL(5,2) DEFAULT 0.00,
+            percentual_padrao INTEGER DEFAULT 0,
             descricao TEXT,
             FOREIGN KEY (unidade_id) REFERENCES unidades (id));
 
 CREATE TABLE IF NOT EXISTS cofres_saldo (
             unidade_id INTEGER NOT NULL,
             cofre_id INTEGER NOT NULL,
-            saldo_atual DECIMAL(10,2) DEFAULT 0.00,
+            saldo_atual INTEGER DEFAULT 0,
             PRIMARY KEY (unidade_id, cofre_id),
             FOREIGN KEY (cofre_id) REFERENCES cofres (id));
 
@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS cofres_movimentacao (
             unidade_id INTEGER NOT NULL,
             cofre_id INTEGER,
             data_movimentacao DATE,
-            valor DECIMAL(10,2),
+            valor INTEGER,
             tipo TEXT, 
             descricao TEXT,
             FOREIGN KEY (cofre_id) REFERENCES cofres (id));
@@ -154,13 +154,13 @@ CREATE TABLE IF NOT EXISTS cofres_movimentacao (
 INSERT OR IGNORE INTO unidades (id, nome) VALUES (1, 'Kumon - Matriz');
 INSERT OR IGNORE INTO unidades (id, nome) VALUES (2, 'Kumon - Filial Centro');
 
-INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 1);
-INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 2)
+-- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 1);
+-- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 2)
 
-INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, '13º Salário e Férias', 15.00, 'Provisão Trabalhista Obrigatória');
-INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Fundo de Emergência', 10.00, 'Reserva para crises');
-INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Capital de Giro', 15.00, 'Dinheiro para rodar o mês');
-INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Investimentos', 10.00, 'Marketing, Reformas');
-INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Lucro Livre (Sócios)', 50.00, 'Disponível para retirada');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, '13º Salário e Férias', 15, 'Provisão Trabalhista Obrigatória');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Fundo de Emergência', 10, 'Reserva para crises');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Capital de Giro', 15, 'Dinheiro para rodar o mês');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Investimentos', 10, 'Marketing, Reformas');
+INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Lucro Livre (Sócios)', 50, 'Disponível para retirada');
 
-INSERT OR IGNORE INTO cofres_saldo (unidade_id, cofre_id, saldo_atual) VALUES (1, 1, 0.00);
+INSERT OR IGNORE INTO cofres_saldo (unidade_id, cofre_id, saldo_atual) VALUES (1, 1, 0);
