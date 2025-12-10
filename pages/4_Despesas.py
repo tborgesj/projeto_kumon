@@ -55,8 +55,18 @@ with tab1:
             
             # Busca categorias do backend (já arrumamos essa função antes)
             categorias = db.buscar_categorias_despesas()
-            cat = c2.selectbox("Categoria", categorias)
-            
+
+            map_categorias = {
+                c["id"]: c["nome_categoria"]
+                for c in categorias
+            }
+
+            categoria_id = c2.selectbox(
+                "Categoria",
+                options=list(map_categorias.keys()),
+                format_func=lambda cid: map_categorias[cid]
+            )
+
             c3, c4 = st.columns(2)
             valor = c3.number_input("Valor (R$)", min_value=0.0, step=10.0)
             
@@ -79,7 +89,7 @@ with tab1:
                             # Chama função complexa do backend
                             db.adicionar_despesa_recorrente(
                                 unidade_id=unidade_atual,
-                                categoria=cat,
+                                categoria=categoria_id,
                                 descricao=desc,
                                 valor=valor,
                                 dia_vencimento=dia_venc
@@ -89,7 +99,7 @@ with tab1:
                             # Chama função simples do backend
                             db.adicionar_despesa_avulsa(
                                 unidade_id=unidade_atual,
-                                categoria=cat,
+                                categoria=categoria_id,
                                 descricao=desc,
                                 valor=valor,
                                 data_vencimento=dt_avulsa
@@ -124,7 +134,7 @@ with tab2:
             def fmt_radio(x):
                 row = df[df['id']==x]
                 if not row.empty:
-                    val = format_brl(row['valor'].values[0])
+                    val = format_brl(db.from_cents(row['valor'].values[0]))
                     return f"{row['descricao'].values[0]} ({val})"
                 return "Selecione"
 
@@ -151,12 +161,23 @@ with tab2:
                         # Carrega lista de categorias (se já tiver a função que criamos antes)
                         lista_cats = db.buscar_categorias_despesas() 
                         idx_cat = lista_cats.index(r_data[2]) if r_data[2] in lista_cats else 0
+
+                        map_categorias = {
+                            c["id"]: c["nome_categoria"]
+                            for c in lista_cats
+                        }
                         
-                        n_cat = ec1.selectbox("Categoria", lista_cats, index=idx_cat)
+                        categoria_id = ec1.selectbox(
+                            "Categoria",
+                            options=list(map_categorias.keys()),   # IDs
+                            index=idx_cat,
+                            format_func=lambda cid: map_categorias[cid]  # O que aparece na tela
+                        )
+
                         n_desc = ec2.text_input("Descrição", value=r_data[3])
                         
                         ec3, ec4 = st.columns(2)
-                        n_val = ec3.number_input("Valor Mensal (R$)", value=float(r_data[4]), step=10.0)
+                        n_val = ec3.number_input("Valor Mensal (R$)", value=db.from_cents(float(r_data[4])), step=10.0)
                         n_dia = ec4.number_input("Dia Vencimento", 1, 31, int(r_data[5]))
                         
                         is_ativo_bd = bool(r_data[8])
@@ -167,7 +188,7 @@ with tab2:
                                 # 3. Atualização Complexa (Backend)
                                 db.atualizar_recorrencia_completa(
                                     id_rec=rec_id_sel,
-                                    categoria=n_cat,
+                                    categoria=categoria_id,
                                     descricao=n_desc,
                                     valor=n_val,
                                     dia=n_dia,

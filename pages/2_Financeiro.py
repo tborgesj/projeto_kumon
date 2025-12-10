@@ -172,7 +172,7 @@ with tab_out:
             
             # Funções visuais (assumindo que já existem no seu código)
             c1.markdown(get_visual_status(r['data_vencimento']))
-            c2.text(f"{r['categoria']} - {r['descricao']}")
+            c2.text(f"{r['nome_categoria']} - {r['descricao']}")
             c3.text(format_brl(db.from_cents(r['valor'])))
             
             # 2. Lógica do Botão Segura

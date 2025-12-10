@@ -474,8 +474,9 @@ def buscar_despesas_pendentes(unidade_id: int, filtro_mes: Optional[str]=None) -
     conn = conectar()
     try:
         query = """
-            SELECT id, data_vencimento, categoria, descricao, valor 
-            FROM despesas 
+            SELECT d.id, d.data_vencimento, d.id_categoria, c.nome_categoria, descricao, valor 
+            FROM despesas d
+            INNER JOIN categorias_despesas c ON (c.id = d.id_categoria)
             WHERE status='PENDENTE' AND unidade_id=?
         """
         params = [unidade_id]
@@ -534,9 +535,13 @@ def executar_robo_financeiro(unidade_id: int) -> Tuple[int, int, int]:
         m_ref_boletos = target.strftime("%m/%Y")
 
         with conn:
-            regras = conn.execute("SELECT id, categoria, descricao, valor, dia_vencimento FROM despesas_recorrentes WHERE ativo=1 AND unidade_id=?", (unidade_id,)).fetchall()
+            regras = conn.execute("""
+                                    SELECT d.id, c.nome_categoria, d.id_categoria, descricao, valor, dia_vencimento 
+                                        FROM despesas_recorrentes d
+                                        INNER JOIN categorias_despesas c ON (c.id = d.id_categoria)
+                                        WHERE ativo=1 AND unidade_id=?""", (unidade_id,)).fetchall()
             for r in regras:
-                rid, cat, desc, val, dia = r['id'], r['categoria'], r['descricao'], r['valor'], r['dia_vencimento']
+                rid, cat, desc, val, dia = r['id'], r['id_categoria'], r['descricao'], r['valor'], r['dia_vencimento']
                 existe = conn.execute("SELECT id FROM despesas WHERE recorrente_id=? AND mes_referencia=? AND unidade_id=?", (rid, mes_str, unidade_id)).fetchone()
                 if not existe:
                     conn.execute("""
@@ -622,8 +627,9 @@ def buscar_fluxo_caixa(unidade_id: int, mes_referencia: str) -> pd.DataFrame:
         '''
         q_des = '''
             SELECT d.id, d.data_pagamento, 'Saída' as Tipo, d.valor as valor_pago, '' as forma_pagamento, 
-            d.categoria || ' - ' || d.descricao as Descricao 
+            c.nome_categoria || ' - ' || d.descricao as Descricao 
             FROM despesas d 
+            INNER JOIN categorias_despesas c ON (c.id = d.id_categoria)
             WHERE d.status='PAGO' AND d.unidade_id=? AND d.mes_referencia=?
         '''
         rec = pd.read_sql(q_rec, conn, params=(unidade_id, mes_referencia))
@@ -709,12 +715,15 @@ def salvar_modelo_contrato(unidade_id: int, nome_arquivo: str, dados_binarios: b
     finally:
         conn.close()
 
-
-def buscar_categorias_despesas() -> List[str]:
+def buscar_categorias_despesas() -> List[dict]:
     conn = conectar()
     try:
-        df = pd.read_sql("SELECT nome_categoria FROM categorias_despesas ORDER BY nome_categoria", conn)
-        return df['nome_categoria'].tolist() if 'nome_categoria' in df.columns else []
+        df = pd.read_sql("""
+            SELECT id, nome_categoria 
+            FROM categorias_despesas 
+            ORDER BY nome_categoria
+        """, conn)
+        return df.to_dict(orient="records")
     finally:
         conn.close()
 
@@ -722,7 +731,22 @@ def buscar_categorias_despesas() -> List[str]:
 def buscar_recorrencias(unidade_id: int, apenas_ativas: bool=True) -> pd.DataFrame:
     conn = conectar()
     try:
-        query = "SELECT id, categoria, descricao, valor, dia_vencimento, ativo FROM despesas_recorrentes WHERE unidade_id=?"
+        query = """
+            SELECT 
+                d.id, 
+                d.id_categoria, 
+                c.nome_categoria,
+                d.descricao, 
+                d.valor, 
+                d.dia_vencimento, 
+                d.ativo
+            FROM 
+                despesas_recorrentes d
+            INNER JOIN
+                categorias_despesas c 
+                    ON (d.id_categoria = c.id)
+            WHERE 
+                unidade_id=?"""
         params = [unidade_id]
         if apenas_ativas:
             query += " AND ativo=1"
@@ -740,7 +764,7 @@ def buscar_detalhe_recorrencia(id_recorrencia: int):
         conn.close()
 
 
-def atualizar_recorrencia_completa(id_rec: int, categoria: str, descricao: str, valor: float, dia: int, ativo: bool, unidade_id: int) -> None:
+def atualizar_recorrencia_completa(id_rec: int, categoria: int, descricao: str, valor: float, dia: int, ativo: bool, unidade_id: int) -> None:
     
     valor_cents = to_cents(valor)
 
@@ -749,13 +773,13 @@ def atualizar_recorrencia_completa(id_rec: int, categoria: str, descricao: str, 
         with conn:
             conn.execute('''
                 UPDATE despesas_recorrentes 
-                SET categoria=?, descricao=?, valor=?, dia_vencimento=?, ativo=? 
+                SET id_categoria=?, descricao=?, valor=?, dia_vencimento=?, ativo=? 
                 WHERE id=?
             ''', (categoria, descricao, valor_cents, dia, _bool_to_int(ativo), id_rec))
             if ativo:
                 conn.execute('''
                     UPDATE despesas 
-                    SET valor=?, descricao=?, categoria=? 
+                    SET valor=?, descricao=?, id_categoria=? 
                     WHERE recorrente_id=? AND status='PENDENTE' AND unidade_id=?
                 ''', (valor_cents, descricao, categoria, id_rec, unidade_id))
     finally:
@@ -780,14 +804,14 @@ def adicionar_despesa_avulsa(unidade_id: int, categoria: str, descricao: str, va
         with conn:
             mes_ref = data_vencimento.strftime("%m/%Y")
             conn.execute('''
-                INSERT INTO despesas (unidade_id, categoria, descricao, valor, data_vencimento, mes_referencia, status) 
+                INSERT INTO despesas (unidade_id, id_categoria, descricao, valor, data_vencimento, mes_referencia, status) 
                 VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE')
             ''', (unidade_id, categoria, descricao, valor_cents, data_vencimento, mes_ref))
     finally:
         conn.close()
 
 
-def adicionar_despesa_recorrente(unidade_id: int, categoria: str, descricao: str, valor: float, dia_vencimento: int) -> None:
+def adicionar_despesa_recorrente(unidade_id: int, categoria: str, descricao: str, valor: int, dia_vencimento: int) -> None:
 
     valor_cents = to_cents(valor)
 
@@ -795,7 +819,7 @@ def adicionar_despesa_recorrente(unidade_id: int, categoria: str, descricao: str
     try:
         with conn:
             cur = conn.execute('''
-                INSERT INTO despesas_recorrentes (unidade_id, categoria, descricao, valor, dia_vencimento, limite_meses, data_criacao, ativo) 
+                INSERT INTO despesas_recorrentes (unidade_id, id_categoria, descricao, valor, dia_vencimento, limite_meses, data_criacao, ativo) 
                 VALUES (?, ?, ?, ?, ?, 0, DATE('now'), 1)
             ''', (unidade_id, categoria, descricao, valor_cents, dia_vencimento))
             rid = cur.lastrowid
@@ -803,7 +827,7 @@ def adicionar_despesa_recorrente(unidade_id: int, categoria: str, descricao: str
             m_ref = f"{hj.month:02d}/{hj.year}"
             dt_venc_atual = _get_valid_date(hj.year, hj.month, dia_vencimento)
             conn.execute('''
-                INSERT INTO despesas (unidade_id, recorrente_id, categoria, descricao, valor, data_vencimento, mes_referencia, status) 
+                INSERT INTO despesas (unidade_id, recorrente_id, id_categoria, descricao, valor, data_vencimento, mes_referencia, status) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDENTE')
             ''', (unidade_id, rid, categoria, descricao, valor_cents, dt_venc_atual, m_ref))
     finally:
@@ -831,10 +855,11 @@ def buscar_despesas_por_categoria(unidade_id: int, ano: int) -> pd.DataFrame:
     try:
         termo = f"%{ano}"
         query = """
-            SELECT categoria, SUM(valor) as total 
-            FROM despesas 
+            SELECT c.nome_categoria, SUM(valor) as total 
+            FROM despesas d
+            INNER JOIN categorias_despesas c ON (c.id = d.id_categoria)
             WHERE unidade_id=? AND mes_referencia LIKE ? AND status='PAGO'
-            GROUP BY categoria
+            GROUP BY c.nome_categoria
         """
         return pd.read_sql_query(query, conn, params=(unidade_id, termo))
     finally:
@@ -879,7 +904,7 @@ def buscar_custo_rh_anual(unidade_id: int, ano: int) -> float:
             SELECT SUM(valor) FROM despesas 
             WHERE unidade_id=? 
             AND mes_referencia LIKE ? 
-            AND (categoria = 'Pessoal' OR categoria = 'Impostos')
+            AND (id_categoria = 1 OR id_categoria = 2)
             AND status='PAGO'
         """
         resultado = conn.execute(query, (unidade_id, termo)).fetchone()[0]

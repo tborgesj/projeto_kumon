@@ -173,7 +173,7 @@ with col_g1:
     if not df_cat.empty:
         # Destaca a fatia de Pessoal
         df_cat['total'] = df_cat['total'].astype(float) / 100
-        fig_pizza = px.pie(df_cat, values='total', names='categoria', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_pizza = px.pie(df_cat, values='total', names='nome_categoria', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
         fig_pizza.update_layout(width=None)
         st.plotly_chart(fig_pizza)
     else:

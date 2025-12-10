@@ -165,4 +165,7 @@ INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, '
 INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Investimentos', 10, 'Marketing, Reformas');
 INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Lucro Livre (Sócios)', 50, 'Disponível para retirada');
 
+INSERT INTO categorias_despesas (id,nome_categoria) values (1,'Pessoal')
+INSERT INTO categorias_despesas (id,nome_categoria) values (2,'Impostos')
+
 INSERT OR IGNORE INTO cofres_saldo (unidade_id, cofre_id, saldo_atual) VALUES (1, 1, 0);
