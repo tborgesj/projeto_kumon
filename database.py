@@ -460,12 +460,17 @@ def registrar_recebimento(unidade_id: int, pagamento_id: int, forma: str, taxa: 
             # Lança despesa de taxa, se aplicável
             if taxa_cents > 0:
                 mes_ref = hoje.strftime("%m/%Y")
-                desc_despesa = f"Taxa Financeira ({forma}) - {nome_aluno}"
+                desc_despesa = f"({forma}) - {nome_aluno}"
+                
+                # CORREÇÃO: Usar id_categoria (3 = Taxas Financeiras)
+                # Se não tiver a cat 3, troque por 2 (Impostos)
+                ID_CAT_TAXAS = 3 
+                
                 conn.execute("""
                     INSERT INTO despesas 
-                    (unidade_id, categoria, descricao, valor, data_vencimento, mes_referencia, data_pagamento, status) 
-                    VALUES (?, 'Taxas Financeiras', ?, ?, ?, ?, ?, 'PAGO')
-                """, (unidade_id, desc_despesa, taxa_cents, hoje, mes_ref, hoje))
+                    (unidade_id, id_categoria, descricao, valor, data_vencimento, mes_referencia, data_pagamento, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'PAGO')
+                """, (unidade_id, ID_CAT_TAXAS, desc_despesa, taxa_cents, hoje, mes_ref, hoje))
     finally:
         conn.close()
 
