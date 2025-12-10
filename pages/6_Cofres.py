@@ -220,7 +220,7 @@ with tab3:
                 lambda x: f'color: {"green" if x=="ENTRADA" else "red"}', 
                 subset=['tipo']
             ), 
-            use_container_width=True
+            width='stretch'
         )
     else:
         st.info("Nenhuma movimentação registrada ainda.")

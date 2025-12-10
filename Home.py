@@ -68,8 +68,8 @@ if dados:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Alunos Ativos", dados['alunos_ativos'], delta="Base Atual")
     c2.metric("Alunos Ausentes", dados['alunos_ausentes'], delta="Base Atual")
-    c3.metric("Receita (Mês)", format_brl(dados['rec_total']), delta="Entradas Previstas")
-    c4.metric("Despesa (Mês)", format_brl(dados['desp_total']), delta="Saídas Previstas", delta_color="inverse")
+    c3.metric("Receita (Mês)", format_brl(db.from_cents(dados['rec_total'])), delta="Entradas Previstas")
+    c4.metric("Despesa (Mês)", format_brl(db.from_cents(dados['desp_total'])), delta="Saídas Previstas", delta_color="inverse")
     
     cor_saldo = "normal" if dados['saldo_previsto'] >= 0 else "inverse"
     c5.metric("Resultado (Previsto)", format_brl(dados['saldo_previsto']), delta="Lucro/Prejuízo", delta_color=cor_saldo)
@@ -97,7 +97,7 @@ with col_l:
             r1, r2, r3 = st.columns([1.5, 3, 2])
             r1.markdown(visual_date)
             r2.write(row['nome'])
-            r3.write(format_brl(row['valor_pago']))
+            r3.write(format_brl(db.from_cents(row['valor_pago'])))
             st.markdown("<hr>", unsafe_allow_html=True)
     else:
         st.success("Tudo recebido neste mês!")
@@ -121,7 +121,7 @@ with col_r:
             r1, r2, r3 = st.columns([1.5, 3, 2])
             r1.markdown(visual_date)
             r2.write(row['descricao'])
-            r3.write(format_brl(row['valor']))
+            r3.write(format_brl(db.from_cents(row['valor'])))
             st.markdown("<hr>", unsafe_allow_html=True)
     else:
         st.success("Tudo pago neste mês!")

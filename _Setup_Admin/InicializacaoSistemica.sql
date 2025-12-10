@@ -24,10 +24,6 @@ CREATE TABLE IF NOT EXISTS parametros (
             valor_mensalidade_padrao INTEGER DEFAULT 350,
             FOREIGN KEY (unidade_id) REFERENCES unidades (id));
 
-CREATE TABLE IF NOT EXISTS categorias_despesas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            nome_categoria TEXT UNIQUE);
-
 CREATE TABLE IF NOT EXISTS config_royalties (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id INTEGER NOT NULL,
@@ -83,28 +79,34 @@ CREATE TABLE IF NOT EXISTS pagamentos (
             forma_pagamento TEXT,
             FOREIGN KEY (matricula_id) REFERENCES matriculas (id));
 
+CREATE TABLE IF NOT EXISTS categorias_despesas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            nome_categoria TEXT UNIQUE);
+
 CREATE TABLE IF NOT EXISTS despesas_recorrentes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id INTEGER NOT NULL,
-            categoria TEXT,
+            id_categoria INTEGER,
             descricao TEXT,
             valor INTEGER,
             dia_vencimento INTEGER,
             limite_meses INTEGER,
             data_criacao DATE,
-            ativo BOOLEAN DEFAULT 1);
+            ativo BOOLEAN DEFAULT 1,
+            FOREIGN KEY (id_categoria) REFERENCES categorias_despesas (id));
 
 CREATE TABLE IF NOT EXISTS despesas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id INTEGER NOT NULL,
             recorrente_id INTEGER,
-            categoria TEXT,
+            id_categoria INTEGER,
             descricao TEXT,
             valor INTEGER,
             data_vencimento DATE,
             mes_referencia TEXT,
             data_pagamento DATE,
-            status TEXT DEFAULT 'PENDENTE');
+            status TEXT DEFAULT 'PENDENTE',
+            FOREIGN KEY (id_categoria) REFERENCES categorias_despesas (id));
 
 CREATE TABLE IF NOT EXISTS funcionarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

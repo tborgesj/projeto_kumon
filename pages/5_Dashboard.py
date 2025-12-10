@@ -64,8 +64,8 @@ if meses_faturados == 0:
     meses_faturados = 1
 
 # --- CÁLCULO DE KPIS GERAIS ---
-receita_ano = df_fin[df_fin['tipo']=='Receita']['total'].sum()
-despesa_ano = df_fin[df_fin['tipo']=='Despesa']['total'].sum()
+receita_ano = db.from_cents(df_fin[df_fin['tipo']=='Receita']['total'].sum())
+despesa_ano = db.from_cents(df_fin[df_fin['tipo']=='Despesa']['total'].sum())
 lucro_ano = receita_ano - despesa_ano
 
 # TICKET MÉDIO CORRIGIDO
@@ -145,10 +145,10 @@ st.markdown("---")
 # VISUALIZAÇÃO - SEÇÃO 3: GRÁFICOS
 # ==============================================================================
 col_graph_main, _ = st.columns([1, 0.01])
-
 with col_graph_main:
     st.subheader("📊 Evolução: Receita vs. Despesas")
     if not df_fin.empty:
+        df_fin['total'] = df_fin['total'].astype(float) / 100
         df_fin['Data'] = pd.to_datetime(df_fin['mes_referencia'], format='%m/%Y')
         df_fin = df_fin.sort_values('Data')
         
@@ -161,7 +161,8 @@ with col_graph_main:
             color_discrete_map={"Receita": "#28a745", "Despesa": "#dc3545"},
             labels={"total": "Valor (R$)", "mes_referencia": "Mês", "tipo": "Tipo"}
         )
-        st.plotly_chart(fig_evolucao, use_container_width=True)
+        fig_evolucao.update_layout(width=None)
+        st.plotly_chart(fig_evolucao)
     else:
         st.info("Sem dados financeiros para o gráfico neste ano.")
 
@@ -171,8 +172,10 @@ with col_g1:
     st.subheader("💸 Detalhamento de Custos")
     if not df_cat.empty:
         # Destaca a fatia de Pessoal
+        df_cat['total'] = df_cat['total'].astype(float) / 100
         fig_pizza = px.pie(df_cat, values='total', names='categoria', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-        st.plotly_chart(fig_pizza, use_container_width=True)
+        fig_pizza.update_layout(width=None)
+        st.plotly_chart(fig_pizza)
     else:
         st.info("Sem despesas cadastradas.")
 
@@ -180,6 +183,7 @@ with col_g2:
     st.subheader("📚 Alunos por Disciplina")
     if not df_mat.empty:
         fig_donut = px.pie(df_mat, values='qtd', names='disciplina', hole=0.4)
-        st.plotly_chart(fig_donut, use_container_width=True)
+        fig_donut.update_layout(width=None)
+        st.plotly_chart(fig_donut)
     else:
         st.info("Sem matrículas ativas.")

@@ -69,6 +69,25 @@ def _bool_to_int(b: bool) -> int:
     return 1 if b else 0
 
 
+# --- HELPERS DE CONVERSÃO MONETÁRIA (Centavos) ---
+
+def to_cents(val) -> int:
+    """Converte R$ 10,00 (float/str) para 1000 (int centavos) para salvar no banco."""
+    if val is None: return 0
+    try:
+        # Converte para float primeiro para garantir, depois multiplica e arredonda
+        return int(round(float(val) * 100))
+    
+    except Exception:
+        return 0
+
+def from_cents(val) -> float:
+    """Converte 1000 (int centavos) do banco para 10.00 (float) para exibir."""
+    if val is None: return 0.0
+    try:
+        return float(val) / 100.0
+    except Exception:
+        return 0.0
 
 
 
@@ -114,63 +133,94 @@ def get_parametros_unidade(unidade_id: int) -> Dict[str, Any]:
     try:
         row = conn.execute("SELECT em_campanha_matricula, valor_taxa_matricula, valor_mensalidade_padrao FROM parametros WHERE unidade_id=?", (unidade_id,)).fetchone()
         if not row:
-            return {"campanha": False, "taxa_matr": 0.0, "mensalidade": 350.0}
-        return {"campanha": bool(row[0]), "taxa_matr": float(row[1]), "mensalidade": float(row[2])}
+            return {"campanha": False, "taxa_matr": 0, "mensalidade": 0}
+        return {"campanha": bool(row[0]), "taxa_matr": from_cents(row[1]), "mensalidade": from_cents(row[2])}
     finally:
         conn.close()
 
 
-def adicionar_matricula_completa(unidade_id: int, aluno_id: int, disciplina: str,
-                                 valor: float, dia_vencimento: int):
-    # Função preservada — mantida a versão robusta que valida entradas e garante transação
-    if not isinstance(unidade_id, int) or unidade_id <= 0:
-        raise ValueError("unidade_id inválido.")
-
-    if not isinstance(aluno_id, int) or aluno_id <= 0:
-        raise ValueError("aluno_id inválido.")
-
-    if not isinstance(disciplina, str) or not disciplina.strip():
-        raise ValueError("disciplina inválida.")
-
-    if not isinstance(valor, (int, float)) or float(valor) <= 0:
-        raise ValueError("valor da matrícula inválido.")
-
-    if not isinstance(dia_vencimento, int) or dia_vencimento < 1 or dia_vencimento > 31:
-        raise ValueError("dia_vencimento deve estar entre 1 e 31.")
-
+def get_parametros_unidade(unidade_id):
+    """
+    Busca as configurações globais da unidade (mensalidade padrão, taxa, campanha).
+    Retorna um dicionário.
+    """
     conn = conectar()
     try:
-        with conn:
-            cur = conn.execute("SELECT COUNT(*) as cnt FROM alunos WHERE id=?", (aluno_id,))
-            if cur.fetchone()['cnt'] == 0:
-                raise ValueError(f"Aluno {aluno_id} não existe.")
+        row = conn.execute("SELECT valor_mensalidade_padrao, valor_taxa_matricula, em_campanha_matricula FROM parametros WHERE unidade_id=?", (unidade_id,)).fetchone()
+        if row:
+            return {
+                'mensalidade': from_cents(row[0]),
+                'taxa_matr': from_cents(row[1]),
+                'campanha': bool(row[2])
+            }
+        return {'mensalidade': 0, 'taxa_matr': 0, 'campanha': False} # Fallback seguro
+    finally:
+        conn.close()
 
-            cur = conn.execute("SELECT COUNT(*) as cnt FROM unidades WHERE id=?", (unidade_id,))
-            if cur.fetchone()['cnt'] == 0:
-                raise ValueError(f"Unidade {unidade_id} não existe.")
+def realizar_matricula_completa(unidade_id, dados_aluno, lista_disciplinas, dia_vencimento, valor_taxa, campanha_ativa):
+    """
+    Realiza todo o processo de matrícula em uma única transação atômica.
+    - Cria Aluno
+    - Cria Matrículas
+    - Gera 1ª Mensalidade
+    - Gera Taxa de Matrícula (se houver)
+    """
+    conn = conectar()
+    try:
+        # Helper de data para calcular vencimentos
+        def get_valid_date_local(year, month, day):
+            try:
+                return date(year, month, day)
+            except ValueError:
+                if month == 12: return date(year, 12, 31)
+                return date(year, month + 1, 1) - pd.Timedelta(days=1)
 
+        hj = datetime.now()
+        
+        # Regra de Negócio: Se dia > 20, cobra só no próximo mês
+        mes_cob = hj.month if hj.day <= 20 else hj.month + 1
+        ano_cob = hj.year
+        if mes_cob > 12: 
+            mes_cob = 1; ano_cob += 1
+            
+        mes_ref = f"{mes_cob:02d}/{ano_cob}"
+        dt_venc_mensal = get_valid_date_local(ano_cob, mes_cob, dia_vencimento)
+
+        with conn: # INÍCIO DA TRANSAÇÃO (Tudo ou Nada)
+            # 1. Cria Aluno
             cur = conn.execute("""
-                INSERT INTO matriculas
-                    (unidade_id, aluno_id, disciplina, valor_acordado, dia_vencimento,
-                     data_inicio, ativo)
-                VALUES (?, ?, ?, ?, ?, DATE('now'), 1)
-            """, (unidade_id, aluno_id, disciplina.strip(), float(valor), dia_vencimento))
-
-            matricula_id = cur.lastrowid
-            if not matricula_id:
-                raise RuntimeError("Falha ao criar matrícula.")
-
-            hoje = datetime.now()
-            mes_ref = f"{hoje.month:02d}/{hoje.year}"
-            data_venc = _get_valid_date(hoje.year, hoje.month, dia_vencimento)
-
-            conn.execute("""
-                INSERT INTO pagamentos
-                    (unidade_id, matricula_id, aluno_id, mes_referencia,
-                     data_vencimento, valor_pago, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE')
-            """, (unidade_id, matricula_id, aluno_id, mes_ref, data_venc, float(valor)))
-        return matricula_id
+                INSERT INTO alunos (unidade_id, nome, responsavel_nome, cpf_responsavel, canal_aquisicao) 
+                VALUES (?, ?, ?, ?, ?)
+            """, (unidade_id, dados_aluno['nome'], dados_aluno['responsavel'], dados_aluno['cpf'], dados_aluno['canal']))
+            aid = cur.lastrowid
+            
+            # 2. Processa Disciplinas
+            for item in lista_disciplinas:
+                # Cria Matrícula
+                cur.execute("""
+                    INSERT INTO matriculas (unidade_id, aluno_id, disciplina, valor_acordado, dia_vencimento, justificativa_desconto, data_inicio, ativo) 
+                    VALUES (?,?,?,?,?,?,DATE('now'),1)
+                """, (unidade_id, aid, item['disc'], to_cents(item['val']), dia_vencimento, item['just']))
+                mid = cur.lastrowid
+                
+                # Gera 1ª Mensalidade
+                cur.execute("""
+                    INSERT INTO pagamentos (unidade_id, matricula_id, aluno_id, mes_referencia, data_vencimento, valor_pago, status, tipo) 
+                    VALUES (?,?,?,?,?,?, 'PENDENTE', 'MENSALIDADE')
+                """, (unidade_id, mid, aid, mes_ref, dt_venc_mensal, to_cents(item['val'])))
+            
+            # 3. Taxa de Matrícula (Se não for isento/campanha)
+            if not campanha_ativa and valor_taxa > 0:
+                dt_tx = date.today() + pd.Timedelta(days=1) # Vence amanhã
+                mes_ref_tx = dt_tx.strftime("%m/%Y")
+                
+                conn.execute("""
+                    INSERT INTO pagamentos (unidade_id, aluno_id, mes_referencia, data_vencimento, valor_pago, status, tipo) 
+                    VALUES (?,?,?,?,?, 'PENDENTE', 'TAXA_MATRICULA')
+                """, (unidade_id, aid, mes_ref_tx, dt_tx, to_cents(valor_taxa)))
+                
+    except Exception as e:
+        raise e
     finally:
         conn.close()
 
@@ -187,6 +237,191 @@ def atualizar_aluno(aluno_id: int, nome: str, responsavel: str, cpf: str, canal:
     finally:
         conn.close()
 
+# --- GESTÃO DE ALUNOS E MATRÍCULAS ---
+
+def buscar_alunos_por_nome(unidade_id, termo_busca=""):
+    """
+    Busca alunos para o seletor. Se termo_busca vazio, traz últimos 50.
+    """
+    conn = conectar()
+    try:
+        if termo_busca:
+            query = "SELECT id, nome FROM alunos WHERE unidade_id=? AND nome LIKE ? ORDER BY nome LIMIT 50"
+            return pd.read_sql_query(query, conn, params=(unidade_id, f"%{termo_busca}%"))
+        else:
+            query = "SELECT id, nome FROM alunos WHERE unidade_id=? ORDER BY id DESC LIMIT 50"
+            return pd.read_sql_query(query, conn, params=(unidade_id,))
+    finally:
+        conn.close()
+
+def buscar_dados_aluno_completo(aluno_id):
+    """Retorna dados cadastrais do aluno."""
+    conn = conectar()
+    try:
+        return conn.execute("SELECT * FROM alunos WHERE id=?", (aluno_id,)).fetchone()
+    finally:
+        conn.close()
+
+def atualizar_dados_aluno(aluno_id, nome, resp, cpf, canal):
+    """Atualiza cadastro básico."""
+    conn = conectar()
+    try:
+        with conn:
+            conn.execute("""
+                UPDATE alunos SET nome=?, responsavel_nome=?, cpf_responsavel=?, canal_aquisicao=? 
+                WHERE id=?
+            """, (nome, resp, cpf, canal, aluno_id))
+    except Exception as e:
+        raise e
+    finally:
+        conn.close()
+
+def buscar_matriculas_aluno(aluno_id, unidade_id):
+    """Retorna lista de matrículas (disciplinas) do aluno."""
+    conn = conectar()
+    try:
+        return conn.execute("""
+            SELECT id, disciplina, valor_acordado, dia_vencimento, ativo, bolsa_ativa, bolsa_meses_restantes 
+            FROM matriculas WHERE aluno_id=? AND unidade_id=?
+        """, (aluno_id, unidade_id)).fetchall()
+    finally:
+        conn.close()
+
+def adicionar_nova_matricula_aluno_existente(unidade_id, aluno_id, disciplina, valor, dia_venc, just):
+    """
+    Adiciona uma nova matéria para um aluno que já existe.
+    Gera a matrícula E a cobrança do mês atual.
+    """
+    conn = conectar()
+    try:
+        # Helper de data
+        def get_valid_date(y, m, d):
+            try: return date(y, m, d)
+            except: return date(y, m + 1, 1) - pd.Timedelta(days=1)
+
+        hj = datetime.now()
+        mes_cob = hj.month if hj.day <= 20 else hj.month + 1
+        ano_cob = hj.year
+        if mes_cob > 12: mes_cob=1; ano_cob+=1
+        
+        mes_ref = f"{mes_cob:02d}/{ano_cob}"
+        dt_venc = get_valid_date(ano_cob, mes_cob, dia_venc)
+
+        with conn:
+            # 1. Matrícula
+            cur = conn.execute("""
+                INSERT INTO matriculas (unidade_id, aluno_id, disciplina, valor_acordado, dia_vencimento, justificativa_desconto, data_inicio, ativo) 
+                VALUES (?,?,?,?,?,?,DATE('now'),1)
+            """, (unidade_id, aluno_id, disciplina, to_cents(valor), dia_venc, just))
+            mid = cur.lastrowid
+            
+            # 2. Financeiro
+            conn.execute("""
+                INSERT INTO pagamentos (unidade_id, matricula_id, aluno_id, mes_referencia, data_vencimento, valor_pago, status, tipo) 
+                VALUES (?,?,?,?,?,?, 'PENDENTE', 'MENSALIDADE')
+            """, (unidade_id, mid, aluno_id, mes_ref, dt_venc, to_cents(valor)))
+    except Exception as e:
+        raise e
+    finally:
+        conn.close()
+
+def aplicar_bolsa_desconto(matricula_id, meses_duracao, unidade_id):
+    """
+    Aplica bolsa de 50% na matrícula E atualiza o boleto pendente atual se houver.
+    """
+    conn = conectar()
+    try:
+        with conn:
+            # 1. Atualiza Matrícula
+            conn.execute("""
+                UPDATE matriculas 
+                SET bolsa_ativa=1, bolsa_meses_restantes=? 
+                WHERE id=?
+            """, (meses_duracao, matricula_id))
+            
+            # 2. Atualiza Boleto Pendente (Aplica 50% no valor atual)
+            # Nota: O SQL calcula direto: valor_pago * 0.5
+            conn.execute("""
+                UPDATE pagamentos 
+                SET valor_pago = valor_pago * 0.5 
+                WHERE matricula_id=? AND status='PENDENTE' AND unidade_id=?
+            """, (matricula_id, unidade_id))
+    except Exception as e:
+        raise e
+    finally:
+        conn.close()
+
+def inativar_matricula(matricula_id):
+    """Desativa uma disciplina específica e define data fim."""
+    conn = conectar()
+    try:
+        with conn:
+            conn.execute("UPDATE matriculas SET ativo=0, data_fim=DATE('now') WHERE id=?", (matricula_id,))
+    except Exception as e:
+        raise e
+    finally:
+        conn.close()
+
+def inativar_aluno_completo(aluno_id):
+    """Desativa TODAS as matrículas do aluno."""
+    conn = conectar()
+    try:
+        with conn:
+            conn.execute("UPDATE matriculas SET ativo=0, data_fim=DATE('now') WHERE aluno_id=?", (aluno_id,))
+    except Exception as e:
+        raise e
+    finally:
+        conn.close()
+
+def buscar_historico_financeiro_aluno(aluno_id, unidade_id):
+    """Retorna DataFrame de pagamentos do aluno."""
+    conn = conectar()
+    try:
+        return pd.read_sql_query("""
+            SELECT mes_referencia, valor_pago, status, tipo 
+            FROM pagamentos 
+            WHERE aluno_id=? AND unidade_id=? 
+            ORDER BY id DESC
+        """, conn, params=(aluno_id, unidade_id))
+    finally:
+        conn.close()
+
+def buscar_binario_contrato(unidade_id):
+    """Retorna o arquivo .docx template salvo no banco."""
+    conn = conectar()
+    try:
+        row = conn.execute("SELECT arquivo_binario FROM docs_templates WHERE unidade_id=? AND tipo='CONTRATO'", (unidade_id,)).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+def buscar_dados_para_doc_word(aluno_id, unidade_id):
+    """
+    Retorna um dicionário com dados do aluno e da matrícula mais recente
+    para preencher o contrato automaticamente.
+    """
+    conn = conectar()
+    try:
+        # Busca Aluno
+        aluno = conn.execute("SELECT nome, responsavel_nome, cpf_responsavel FROM alunos WHERE id=?", (aluno_id,)).fetchone()
+        # Busca Matrícula Recente (Pega a primeira ativa ou última criada)
+        mat = conn.execute("""
+            SELECT valor_acordado, dia_vencimento 
+            FROM matriculas 
+            WHERE aluno_id=? AND unidade_id=? 
+            ORDER BY ativo DESC, id DESC LIMIT 1
+        """, (aluno_id, unidade_id)).fetchone()
+        
+        # Busca Taxa (Parâmetros)
+        param = conn.execute("SELECT valor_taxa_matricula FROM parametros WHERE unidade_id=?", (unidade_id,)).fetchone()
+        
+        return {
+            'aluno': aluno,
+            'matricula': mat,
+            'taxa': from_cents(param[0]) if param else 0
+        }
+    finally:
+        conn.close()
 
 def buscar_recebimentos_pendentes(unidade_id: int, filtro_mes: Optional[str]=None) -> pd.DataFrame:
     conn = conectar()
@@ -209,6 +444,9 @@ def buscar_recebimentos_pendentes(unidade_id: int, filtro_mes: Optional[str]=Non
 
 
 def registrar_recebimento(unidade_id: int, pagamento_id: int, forma: str, taxa: float, nome_aluno: str) -> None:
+
+    taxa_cents = to_cents(taxa)
+
     conn = conectar()
     try:
         with conn:
@@ -220,14 +458,14 @@ def registrar_recebimento(unidade_id: int, pagamento_id: int, forma: str, taxa: 
                 WHERE id=?
             """, (hoje, forma, pagamento_id))
             # Lança despesa de taxa, se aplicável
-            if taxa and float(taxa) > 0:
+            if taxa_cents > 0:
                 mes_ref = hoje.strftime("%m/%Y")
                 desc_despesa = f"Taxa Financeira ({forma}) - {nome_aluno}"
                 conn.execute("""
                     INSERT INTO despesas 
                     (unidade_id, categoria, descricao, valor, data_vencimento, mes_referencia, data_pagamento, status) 
                     VALUES (?, 'Taxas Financeiras', ?, ?, ?, ?, ?, 'PAGO')
-                """, (unidade_id, desc_despesa, float(taxa), hoje, mes_ref, hoje))
+                """, (unidade_id, desc_despesa, taxa_cents, hoje, mes_ref, hoje))
     finally:
         conn.close()
 
@@ -304,7 +542,7 @@ def executar_robo_financeiro(unidade_id: int) -> Tuple[int, int, int]:
                     conn.execute("""
                         INSERT INTO despesas (unidade_id, recorrente_id, categoria, descricao, valor, data_vencimento, mes_referencia, status) 
                         VALUES (?,?,?,?,?,?,?, 'PENDENTE')
-                    """, (unidade_id, rid, cat, desc, val, _get_valid_date_local(hj.year, hj.month, dia), mes_str))
+                    """, (unidade_id, rid, cat, desc, to_cents(val), _get_valid_date_local(hj.year, hj.month, dia), mes_str))
                     cnt_d += 1
 
             mats = conn.execute("SELECT id, valor_acordado, aluno_id, dia_vencimento, bolsa_ativa, bolsa_meses_restantes FROM matriculas WHERE ativo=1 AND unidade_id=?", (unidade_id,)).fetchall()
@@ -317,11 +555,11 @@ def executar_robo_financeiro(unidade_id: int) -> Tuple[int, int, int]:
                         valor_final = float(val_base) * 0.50
                         novo_saldo = b_meses - 1
                         novo_status = 1 if novo_saldo > 0 else 0
-                        conn.execute("UPDATE matriculas SET bolsa_meses_restantes=?, bolsa_ativa=? WHERE id=?", (novo_saldo, novo_status, mid))
+                        conn.execute("UPDATE matriculas SET bolsa_meses_restantes=?, bolsa_ativa=? WHERE id=?", (to_cents(novo_saldo), novo_status, mid))
                     conn.execute("""
                         INSERT INTO pagamentos (unidade_id, matricula_id, aluno_id, mes_referencia, data_vencimento, valor_pago, status) 
                         VALUES (?,?,?,?,?,?,'PENDENTE')
-                    """, (unidade_id, mid, aid, m_ref_boletos, _get_valid_date_local(target.year, target.month, dia), valor_final))
+                    """, (unidade_id, mid, aid, m_ref_boletos, _get_valid_date_local(target.year, target.month, dia), to_cents(valor_final)))
                     cnt_r += 1
 
             funcs = conn.execute("SELECT id, nome, salario_base, dia_pagamento_salario FROM funcionarios WHERE ativo=1 AND unidade_id=?", (unidade_id,)).fetchall()
@@ -348,7 +586,7 @@ def executar_robo_financeiro(unidade_id: int) -> Tuple[int, int, int]:
                             conn.execute("""
                                 INSERT INTO despesas (unidade_id, categoria, descricao, valor, data_vencimento, mes_referencia, status) 
                                 VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE')
-                            """, (unidade_id, cat, desc_item, cval, _get_valid_date_local(hj.year, hj.month, cdia), mes_str))
+                            """, (unidade_id, cat, desc_item, to_cents(cval), _get_valid_date_local(hj.year, hj.month, cdia), mes_str))
                             cnt_p += 1
         return cnt_d, cnt_r, cnt_p
     finally:
@@ -408,7 +646,7 @@ def atualizar_parametros_unidade(unidade_id: int, mensalidade: float, taxa: floa
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(unidade_id) DO UPDATE SET em_campanha_matricula=excluded.em_campanha_matricula,
                     valor_taxa_matricula=excluded.valor_taxa_matricula, valor_mensalidade_padrao=excluded.valor_mensalidade_padrao
-            ''', (unidade_id, _bool_to_int(em_campanha), taxa, mensalidade))
+            ''', (unidade_id, _bool_to_int(em_campanha), to_cents(taxa), to_cents(mensalidade)))
     finally:
         conn.close()
 
@@ -430,7 +668,7 @@ def adicionar_royalty(unidade_id: int, valor: float, inicio: str) -> None:
     conn = conectar()
     try:
         with conn:
-            conn.execute("INSERT INTO config_royalties (unidade_id, valor, ano_mes_inicio) VALUES (?, ?, ?)", (unidade_id, valor, inicio))
+            conn.execute("INSERT INTO config_royalties (unidade_id, valor, ano_mes_inicio) VALUES (?, ?, ?)", (unidade_id, to_cents(valor), inicio))
     finally:
         conn.close()
 
@@ -503,6 +741,9 @@ def buscar_detalhe_recorrencia(id_recorrencia: int):
 
 
 def atualizar_recorrencia_completa(id_rec: int, categoria: str, descricao: str, valor: float, dia: int, ativo: bool, unidade_id: int) -> None:
+    
+    valor_cents = to_cents(valor)
+
     conn = conectar()
     try:
         with conn:
@@ -510,13 +751,13 @@ def atualizar_recorrencia_completa(id_rec: int, categoria: str, descricao: str, 
                 UPDATE despesas_recorrentes 
                 SET categoria=?, descricao=?, valor=?, dia_vencimento=?, ativo=? 
                 WHERE id=?
-            ''', (categoria, descricao, valor, dia, _bool_to_int(ativo), id_rec))
+            ''', (categoria, descricao, valor_cents, dia, _bool_to_int(ativo), id_rec))
             if ativo:
                 conn.execute('''
                     UPDATE despesas 
                     SET valor=?, descricao=?, categoria=? 
                     WHERE recorrente_id=? AND status='PENDENTE' AND unidade_id=?
-                ''', (valor, descricao, categoria, id_rec, unidade_id))
+                ''', (valor_cents, descricao, categoria, id_rec, unidade_id))
     finally:
         conn.close()
 
@@ -531,6 +772,9 @@ def encerrar_recorrencia(id_rec: int) -> None:
 
 
 def adicionar_despesa_avulsa(unidade_id: int, categoria: str, descricao: str, valor: float, data_vencimento: date) -> None:
+
+    valor_cents = to_cents(valor)
+
     conn = conectar()
     try:
         with conn:
@@ -538,19 +782,22 @@ def adicionar_despesa_avulsa(unidade_id: int, categoria: str, descricao: str, va
             conn.execute('''
                 INSERT INTO despesas (unidade_id, categoria, descricao, valor, data_vencimento, mes_referencia, status) 
                 VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE')
-            ''', (unidade_id, categoria, descricao, valor, data_vencimento, mes_ref))
+            ''', (unidade_id, categoria, descricao, valor_cents, data_vencimento, mes_ref))
     finally:
         conn.close()
 
 
 def adicionar_despesa_recorrente(unidade_id: int, categoria: str, descricao: str, valor: float, dia_vencimento: int) -> None:
+
+    valor_cents = to_cents(valor)
+
     conn = conectar()
     try:
         with conn:
             cur = conn.execute('''
                 INSERT INTO despesas_recorrentes (unidade_id, categoria, descricao, valor, dia_vencimento, limite_meses, data_criacao, ativo) 
                 VALUES (?, ?, ?, ?, ?, 0, DATE('now'), 1)
-            ''', (unidade_id, categoria, descricao, valor, dia_vencimento))
+            ''', (unidade_id, categoria, descricao, valor_cents, dia_vencimento))
             rid = cur.lastrowid
             hj = datetime.now()
             m_ref = f"{hj.month:02d}/{hj.year}"
@@ -558,7 +805,7 @@ def adicionar_despesa_recorrente(unidade_id: int, categoria: str, descricao: str
             conn.execute('''
                 INSERT INTO despesas (unidade_id, recorrente_id, categoria, descricao, valor, data_vencimento, mes_referencia, status) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDENTE')
-            ''', (unidade_id, rid, categoria, descricao, valor, dt_venc_atual, m_ref))
+            ''', (unidade_id, rid, categoria, descricao, valor_cents, dt_venc_atual, m_ref))
     finally:
         conn.close()
 
@@ -636,7 +883,7 @@ def buscar_custo_rh_anual(unidade_id: int, ano: int) -> float:
             AND status='PAGO'
         """
         resultado = conn.execute(query, (unidade_id, termo)).fetchone()[0]
-        return float(resultado) if resultado else 0.0
+        return from_cents(resultado) if resultado else 0
     finally:
         conn.close()
 
@@ -680,14 +927,14 @@ def realizar_distribuicao_lucro(unidade_id: int, mapa_distribuicao: Dict[int, fl
                     UPDATE cofres_saldo 
                     SET saldo_atual = saldo_atual + ? 
                     WHERE cofre_id=? AND unidade_id=?
-                """, (valor, cofre_id, unidade_id))
+                """, (to_cents(valor), cofre_id, unidade_id))
                 if cur.rowcount == 0:
                     raise ValueError(f"Cofre {cofre_id} não existe para a unidade {unidade_id}")
                 conn.execute("""
                     INSERT INTO cofres_movimentacao 
                     (unidade_id, cofre_id, data_movimentacao, valor, tipo, descricao) 
                     VALUES (?, ?, ?, ?, 'ENTRADA', 'Distribuição de Lucro')
-                """, (unidade_id, cofre_id, hoje, valor))
+                """, (unidade_id, cofre_id, hoje, to_cents(valor)))
     finally:
         conn.close()
 
@@ -703,14 +950,14 @@ def realizar_saque_cofre(unidade_id: int, cofre_id: int, valor: float, motivo: s
                 UPDATE cofres_saldo 
                 SET saldo_atual = saldo_atual - ? 
                 WHERE cofre_id=? AND unidade_id=?
-            """, (valor, cofre_id, unidade_id))
+            """, (to_cents(valor), cofre_id, unidade_id))
             if cur.rowcount == 0:
                 raise ValueError("Cofre não encontrado ou relação com unidade incorreta.")
             conn.execute("""
                 INSERT INTO cofres_movimentacao 
                 (unidade_id, cofre_id, data_movimentacao, valor, tipo, descricao) 
                 VALUES (?, ?, DATE('now'), ?, 'SAIDA', ?)
-            """, (unidade_id, cofre_id, valor, motivo))
+            """, (unidade_id, cofre_id, to_cents(valor), motivo))
     finally:
         conn.close()
 
@@ -734,7 +981,7 @@ def calcular_lucro_realizado(unidade_id: int, mes_referencia: str) -> float:
     try:
         rec = conn.execute("SELECT SUM(valor_pago) as total FROM pagamentos WHERE mes_referencia=? AND status='PAGO' AND unidade_id=?", (mes_referencia, unidade_id)).fetchone()['total'] or 0.0
         des = conn.execute("SELECT SUM(valor) as total FROM despesas WHERE mes_referencia=? AND status='PAGO' AND unidade_id=?", (mes_referencia, unidade_id)).fetchone()['total'] or 0.0
-        lucro = float(rec) - float(des)
+        lucro = from_cents(rec) - from_cents(des)
         return lucro if lucro > 0 else 0.0
     finally:
         conn.close()
@@ -917,7 +1164,7 @@ def cadastrar_funcionario_completo(unidade_id, nome, tipo, salario, dia_pag, lis
             cur = conn.execute('''
                 INSERT INTO funcionarios (unidade_id, nome, tipo_contratacao, salario_base, data_contratacao, dia_pagamento_salario, ativo)
                 VALUES (?, ?, ?, ?, DATE('now'), ?, 1)
-            ''', (unidade_id, nome, tipo, salario, dia_pag))
+            ''', (unidade_id, nome, tipo, to_cents(salario), dia_pag))
             fid = cur.lastrowid
             
             # 2. Custos
@@ -925,7 +1172,7 @@ def cadastrar_funcionario_completo(unidade_id, nome, tipo, salario, dia_pag, lis
                 conn.execute('''
                     INSERT INTO custos_pessoal (unidade_id, funcionario_id, tipo_item, nome_item, valor, dia_vencimento)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ''', (unidade_id, fid, item['tipo'], item['nome'], item['valor'], item['dia']))
+                ''', (unidade_id, fid, item['tipo'], item['nome'], to_cents(item['valor']), item['dia']))
     except Exception as e:
         raise e
     finally:
@@ -967,7 +1214,7 @@ def atualizar_funcionario_completo(func_id, nome_novo, tipo, salario, dia, ativo
                 UPDATE funcionarios 
                 SET nome=?, tipo_contratacao=?, salario_base=?, dia_pagamento_salario=?, ativo=?, data_demissao=?
                 WHERE id=?
-            ''', (nome_novo, tipo, salario, dia, 1 if ativo else 0, data_demissao, func_id))
+            ''', (nome_novo, tipo, to_cents(salario), dia, 1 if ativo else 0, data_demissao, func_id))
             
             # 2. Propagação Financeira (Sincronizar Salário Pendente)
             desc_sal_antiga = f"Salário - {nome_antigo}"
@@ -977,7 +1224,7 @@ def atualizar_funcionario_completo(func_id, nome_novo, tipo, salario, dia, ativo
             conn.execute('''
                 UPDATE despesas SET valor=?, descricao=? 
                 WHERE descricao=? AND status='PENDENTE' AND unidade_id=?
-            ''', (salario, desc_sal_nova, desc_sal_antiga, unidade_id))
+            ''', (to_cents(salario), desc_sal_nova, desc_sal_antiga, unidade_id))
 
             # Atualiza nome nos benefícios pendentes (se mudou de nome)
             if nome_antigo != nome_novo:
@@ -1047,7 +1294,7 @@ def adicionar_custo_extra_funcionario(unidade_id, func_id, tipo_item, nome_item,
             conn.execute('''
                 INSERT INTO custos_pessoal (unidade_id, funcionario_id, tipo_item, nome_item, valor, dia_vencimento) 
                 VALUES (?,?,?,?,?,?)
-            ''', (unidade_id, func_id, tipo_item, nome_item, valor, dia_venc))
+            ''', (unidade_id, func_id, tipo_item, nome_item, to_cents(valor), dia_venc))
             
             # 2. Gera Despesa Financeira (Mês Atual)
             hj = datetime.now()
@@ -1064,7 +1311,7 @@ def adicionar_custo_extra_funcionario(unidade_id, func_id, tipo_item, nome_item,
                 conn.execute('''
                     INSERT INTO despesas (unidade_id, categoria, descricao, valor, data_vencimento, mes_referencia, status) 
                     VALUES (?, ?, ?, ?, ?, ?, 'PENDENTE')
-                ''', (unidade_id, cat_item, desc_item, valor, dt_venc, mes_ref))
+                ''', (unidade_id, cat_item, desc_item, to_cents(valor), dt_venc, mes_ref))
     except Exception as e:
         raise e
     finally:
@@ -1132,7 +1379,7 @@ def importar_dados_migracao(unidade_id, lista_registros):
                 cur = conn.execute("""
                     INSERT INTO matriculas (unidade_id, aluno_id, disciplina, valor_acordado, dia_vencimento, data_inicio, ativo, justificativa_desconto) 
                     VALUES (?,?,?,?,?,DATE('now'),1, 'Migracao')""",
-                    (unidade_id, aid, row['disciplina'], row['valor'], row['dia_vencimento']))
+                    (unidade_id, aid, row['disciplina'], to_cents(row['valor']), row['dia_vencimento']))
                 mid = cur.lastrowid
                 
                 # 3. Gera Mensalidade do Mês Atual
@@ -1141,7 +1388,7 @@ def importar_dados_migracao(unidade_id, lista_registros):
                 conn.execute("""
                     INSERT INTO pagamentos (unidade_id, matricula_id, aluno_id, mes_referencia, data_vencimento, valor_pago, status) 
                     VALUES (?,?,?,?,?,?,'PENDENTE')""",
-                    (unidade_id, mid, aid, mes_ref, dt_venc, row['valor']))
+                    (unidade_id, mid, aid, mes_ref, dt_venc, to_cents(row['valor'])))
                     
     except Exception as e:
         raise e
@@ -1184,11 +1431,11 @@ def buscar_resumo_operacional_mes(unidade_id):
 
         return {
             "mes": mes_ref,
-            "rec_total": rec_total,
-            "rec_pendente": rec_pendente,
+            "rec_total": from_cents(rec_total),
+            "rec_pendente": from_cents(rec_pendente),
             "desp_total": desp_total,
             "desp_pendente": desp_pendente,
-            "saldo_previsto": rec_total - desp_total,
+            "saldo_previsto": from_cents(rec_total - desp_total),
             "alunos_ativos": alunos_ativos,
             "alunos_ausentes": alunos_ausentes,
         }

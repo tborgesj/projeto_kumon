@@ -167,7 +167,7 @@ if st.session_state['rel_df'] is not None and not st.session_state['rel_df'].emp
     
     st.divider()
     st.success(f"{len(df_show)} registros carregados.")
-    st.dataframe(df_show, use_container_width=True)
+    st.dataframe(df_show, width='stretch')
     
     st.markdown("### 📥 Exportar Arquivos")
     

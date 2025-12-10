@@ -71,7 +71,7 @@ with tab2:
         # Cria uma cópia para formatar o visual sem estragar os dados originais
         df_visual = df_roy.copy()
         df_visual['valor'] = df_visual['valor'].apply(format_brl)
-        st.dataframe(df_visual, use_container_width=True)
+        st.dataframe(df_visual, width='stretch')
         
         st.write("Excluir regra antiga:")
         for index, row in df_roy.iterrows():

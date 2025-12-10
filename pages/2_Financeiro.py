@@ -59,14 +59,6 @@ def get_meses_disponiveis(uid):
     if atual not in lista: 
         lista.append(atual)
     
-    try:
-        # Adiciona o próximo mês para facilitar lançamentos futuros
-        prox = (datetime.now().replace(day=1) + pd.DateOffset(months=1)).strftime("%m/%Y")
-        if prox not in lista: 
-            lista.append(prox)
-    except: 
-        pass
-    
     # 3. Ordenação Decrescente (Data mais recente primeiro)
     lista.sort(key=lambda x: datetime.strptime(x, "%m/%Y") if x else datetime.now(), reverse=True)
     
@@ -154,7 +146,7 @@ with tab_in:
             disciplina = r['disciplina'] if r['disciplina'] else 'Taxa'
             c2.text(f"{r['nome']} ({disciplina})")
             
-            c3.text(format_brl(r['valor_pago']))
+            c3.text(format_brl(db.from_cents(r['valor_pago'])))
             
             # Botão de Ação chamando o Popup (que já arrumamos antes)
             if c4.button("Receber", key=f"r_{r['id']}"): 
@@ -181,7 +173,7 @@ with tab_out:
             # Funções visuais (assumindo que já existem no seu código)
             c1.markdown(get_visual_status(r['data_vencimento']))
             c2.text(f"{r['categoria']} - {r['descricao']}")
-            c3.text(format_brl(r['valor']))
+            c3.text(format_brl(db.from_cents(r['valor'])))
             
             # 2. Lógica do Botão Segura
             if c4.button("Pagar", key=f"p_{r['id']}"):
@@ -226,7 +218,7 @@ with tab_fluxo:
             c2.markdown(f":{cor}[{row['Tipo']}]")
             
             c3.text(row['Descricao'])
-            c4.text(format_brl(row['valor_pago']))
+            c4.text(format_brl(db.from_cents(row['valor_pago'])))
             c5.text(row['forma_pagamento'] if row['forma_pagamento'] else "-")
             
             # Botão de Estorno
@@ -238,8 +230,8 @@ with tab_fluxo:
         st.divider()
         
         # Cálculo de Totais (Otimizado com Pandas)
-        total_entradas = geral[geral['Tipo'] == 'Entrada']['valor_pago'].sum()
-        total_saidas = geral[geral['Tipo'] == 'Saída']['valor_pago'].sum()
+        total_entradas = db.from_cents(geral[geral['Tipo'] == 'Entrada']['valor_pago'].sum())
+        total_saidas = db.from_cents(geral[geral['Tipo'] == 'Saída']['valor_pago'].sum())
         saldo = total_entradas - total_saidas
         
         k1, k2, k3 = st.columns(3)
