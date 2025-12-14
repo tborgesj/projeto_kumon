@@ -385,3 +385,53 @@ CREATE TABLE IF NOT EXISTS pagamentos (
 
 -- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 1);
 -- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 2)
+
+
+-- ============================================================
+-- ÍNDICES DE PERFORMANCE (OTIMIZAÇÃO)
+-- ============================================================
+
+-- 1. Tabela PAGAMENTOS (A mais crítica para o Dashboard)
+-- Cenário: "Quanto recebi este mês na unidade X?"
+-- Cobre: WHERE unidade_id=? AND mes_referencia=? AND id_status=?
+CREATE INDEX IF NOT EXISTS idx_pagamentos_dashboard 
+ON pagamentos (unidade_id, mes_referencia, id_status);
+
+-- Cenário: "Quem está devendo?" ou "Próximos vencimentos"
+-- Cobre: WHERE unidade_id=? AND id_status=1 ORDER BY data_vencimento
+CREATE INDEX IF NOT EXISTS idx_pagamentos_cobranca 
+ON pagamentos (unidade_id, id_status, data_vencimento);
+
+-- Cenário: Histórico financeiro do aluno (Aba 2 de Alunos)
+-- Cobre: JOINs e buscas por aluno específico
+CREATE INDEX IF NOT EXISTS idx_pagamentos_aluno 
+ON pagamentos (aluno_id);
+
+
+-- 2. Tabela DESPESAS
+-- Cenário: Fluxo de Caixa e Resumo Operacional
+-- Cobre: WHERE unidade_id=? AND mes_referencia=?
+CREATE INDEX IF NOT EXISTS idx_despesas_dashboard 
+ON despesas (unidade_id, mes_referencia, id_status);
+
+
+-- 3. Tabela ALUNOS
+-- Cenário: Busca rápida no Selectbox e listagens
+-- Cobre: WHERE unidade_id=? AND nome LIKE '...'
+CREATE INDEX IF NOT EXISTS idx_alunos_busca 
+ON alunos (unidade_id, nome);
+
+-- Cenário: JOINs (Chave Estrangeira nem sempre cria índice automático no SQLite para busca reversa)
+CREATE INDEX IF NOT EXISTS idx_alunos_cpf 
+ON alunos (cpf_responsavel);
+
+
+-- 4. Tabela MATRÍCULAS
+-- Cenário: Robô Financeiro (Gerar mensalidades para ativos)
+-- Cobre: WHERE unidade_id=? AND ativo=1
+CREATE INDEX IF NOT EXISTS idx_matriculas_geracao 
+ON matriculas (unidade_id, ativo);
+
+-- Cenário: Vínculo com Aluno (JOINs)
+CREATE INDEX IF NOT EXISTS idx_matriculas_aluno 
+ON matriculas (aluno_id);
