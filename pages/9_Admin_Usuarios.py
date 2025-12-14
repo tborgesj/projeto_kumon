@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import database as db
 import auth
-import hashlib
+import bcrypt
 
 st.set_page_config(page_title="Admin Usuários", layout="wide", page_icon="🔐")
 if not auth.validar_sessao(): auth.tela_login(); st.stop()
@@ -15,6 +15,8 @@ if not st.session_state.get('usuario_admin'):
 
 auth.barra_lateral()
 st.title("🔐 Gestão de Usuários e Acessos")
+
+
 
 # --- POPUP DE SUCESSO ---
 @st.dialog("Sucesso!")
@@ -55,7 +57,7 @@ with tab1:
             else:
                 try:
                     # Gera Hash da Senha
-                    p_hash = hashlib.sha256(new_pass.encode()).hexdigest()
+                    p_hash = db._gerar_hash_bcrypt(new_pass)
                     
                     # Chama função transacional do Backend
                     db.criar_usuario_completo(
@@ -120,7 +122,8 @@ with tab2:
                     else:
                         try:
                             # Prepara hash apenas se houve troca de senha
-                            nhash = hashlib.sha256(enova_senha.encode()).hexdigest() if enova_senha else None
+                            nhash = db._gerar_hash_bcrypt(enova_senha.encode()) if enova_senha else None
+                            # nhash = hashlib.sha256(enova_senha.encode()).hexdigest() if enova_senha else None
                             
                             # Chama função transacional do Backend
                             db.atualizar_usuario_completo(

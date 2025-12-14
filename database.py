@@ -8,7 +8,7 @@ Goals:
 """
 
 import sqlite3
-import hashlib
+import bcrypt
 import logging
 from datetime import date, datetime
 from calendar import monthrange
@@ -90,25 +90,51 @@ def from_cents(val) -> float:
         return 0.0
 
 
+# Gerador de hash para senha
+
+def _gerar_hash_bcrypt(senha_plana: str) -> str:
+    """Gera um hash seguro usando Bcrypt com Salt automático."""
+    # Bcrypt trabalha com bytes, então codificamos a string
+    # E decodificamos o resultado para salvar como TEXT no banco SQLite
+    salt = bcrypt.gensalt()
+    hash_bytes = bcrypt.hashpw(senha_plana.encode('utf-8'), salt)
+    return hash_bytes.decode('utf-8')
+
+def _verificar_senha_bcrypt(senha_plana: str, hash_banco: str) -> bool:
+    """Verifica se a senha bate com o hash Bcrypt."""
+    try:
+        return bcrypt.checkpw(senha_plana.encode('utf-8'), hash_banco.encode('utf-8'))
+    except ValueError:
+        return False
+
 
 # --- 4. Funções auxiliares e operacionais (preservando assinaturas públicas) ---
 
 def verificar_credenciais(usuario: str, senha_digitada: str) -> Tuple[bool, Optional[str], bool]:
-    """Verifica credenciais. Compatível com hashes SHA256 existentes.
+    """Verifica credenciais. Compatível com hashes existentes.
     Retorna (ok, nome_completo, is_admin).
-    OBS: recomendamos migrar para bcrypt/argon2; esta função mantém compatibilidade com SHA256.
     """
     conn = conectar()
     try:
-        senha_hash = hashlib.sha256(senha_digitada.encode()).hexdigest()
+        
         row = conn.execute("SELECT nome_completo, admin, password_hash FROM usuarios WHERE username = ? AND ativo=1", (usuario,)).fetchone()
+        
         if not row:
             return False, None, False
 
         stored = row['password_hash']
-        # Se o stored for um algoritmo diferente no futuro, adapte aqui
-        if stored == senha_hash:
-            return True, row['nome_completo'], bool(row['admin'])
+
+        # # Se o stored for um algoritmo diferente no futuro, adapte aqui
+        # if stored == senha_hash:
+        #     return True, row['nome_completo'], bool(row['admin'])
+
+        # O stored_hash vem do SQLite como string, então também convertemos para bytes
+        try:
+            if bcrypt.checkpw(senha_digitada.encode('utf-8'), stored.encode('utf-8')):
+                return True, row['nome_completo'], bool(row['admin'])
+        except ValueError:
+            # Proteção caso, por algum erro manual, o banco tenha um hash inválido/corrompido
+            return False, None, False
 
         # Se quiser implementar troca incremental: verificar outros esquemas aqui (ex: bcrypt)
         return False, None, False
