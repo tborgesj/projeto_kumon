@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS alunos (
             nome TEXT NOT NULL,
             responsavel_nome TEXT,
             cpf_responsavel TEXT, 
-            canal_aquisicao TEXT,
+            id_canal_aquisicao INTEGER,
             data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (unidade_id) REFERENCES unidades (id));
 
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS matriculas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id INTEGER NOT NULL,
             aluno_id INTEGER,
-            disciplina TEXT NOT NULL,
+            id_disciplina INTEGER NOT NULL,
             data_inicio DATE,
             valor_acordado INTEGER NOT NULL,
             dia_vencimento INTEGER DEFAULT 10,
@@ -74,10 +74,14 @@ CREATE TABLE IF NOT EXISTS pagamentos (
             valor_pago INTEGER,
             data_vencimento DATE,
             data_pagamento DATE,
-            status TEXT,
-            tipo TEXT DEFAULT 'MENSALIDADE',
-            forma_pagamento TEXT,
-            FOREIGN KEY (matricula_id) REFERENCES matriculas (id));
+            id_status INTEGER DEFAULT 1, -- Alterado de TEXT para FK (Padrão: Pendente)
+            id_tipo INTEGER DEFAULT 1,   -- Alterado de TEXT para FK (Padrão: Mensalidade)
+            forma_pagamento TEXT,        -- Podemos normalizar este também futuramente (Pix, Boleto, etc.)
+            FOREIGN KEY (unidade_id) REFERENCES unidades (id),
+            FOREIGN KEY (matricula_id) REFERENCES matriculas (id),
+            FOREIGN KEY (aluno_id) REFERENCES alunos (id),
+            FOREIGN KEY (id_status) REFERENCES status_pagamentos (id),
+            FOREIGN KEY (id_tipo) REFERENCES tipos_pagamento (id));
 
 CREATE TABLE IF NOT EXISTS categorias_despesas (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -95,6 +99,10 @@ CREATE TABLE IF NOT EXISTS despesas_recorrentes (
             ativo BOOLEAN DEFAULT 1,
             FOREIGN KEY (id_categoria) REFERENCES categorias_despesas (id));
 
+
+
+
+
 CREATE TABLE IF NOT EXISTS despesas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             unidade_id INTEGER NOT NULL,
@@ -105,8 +113,10 @@ CREATE TABLE IF NOT EXISTS despesas (
             data_vencimento DATE,
             mes_referencia TEXT,
             data_pagamento DATE,
-            status TEXT DEFAULT 'PENDENTE',
-            FOREIGN KEY (id_categoria) REFERENCES categorias_despesas (id));
+            id_status INTEGER DEFAULT 1, -- Alterado de TEXT para INTEGER (FK)
+            FOREIGN KEY (id_categoria) REFERENCES categorias_despesas (id),
+            FOREIGN KEY (id_status) REFERENCES status_despesas (id)
+        );
 
 CREATE TABLE IF NOT EXISTS funcionarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,11 +163,15 @@ CREATE TABLE IF NOT EXISTS cofres_movimentacao (
             descricao TEXT,
             FOREIGN KEY (cofre_id) REFERENCES cofres (id));
 
+CREATE TABLE IF NOT EXISTS status_despesas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+
+
 INSERT OR IGNORE INTO unidades (id, nome) VALUES (1, 'Kumon - Matriz');
 INSERT OR IGNORE INTO unidades (id, nome) VALUES (2, 'Kumon - Filial Centro');
-
--- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 1);
--- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 2)
 
 INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, '13º Salário e Férias', 15, 'Provisão Trabalhista Obrigatória');
 INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Fundo de Emergência', 10, 'Reserva para crises');
@@ -165,8 +179,209 @@ INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, '
 INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Investimentos', 10, 'Marketing, Reformas');
 INSERT INTO cofres (unidade_id, nome, percentual_padrao, descricao) VALUES (1, 'Lucro Livre (Sócios)', 50, 'Disponível para retirada');
 
-INSERT INTO categorias_despesas (id,nome_categoria) values (1,'Pessoal')
-INSERT INTO categorias_despesas (id,nome_categoria) values (2,'Impostos')
-INSERT INTO categorias_despesas (id,nome_categoria) values (3,'Taxas Financeiras')
+-- Carga inicial de dados para referência
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (1, 'PENDENTE');
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (2, 'PAGO');
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (3, 'ATRASADO');
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (4, 'CANCELADO');
+
+INSERT INTO categorias_despesas (id,nome_categoria) values (1,'Pessoal');
+INSERT INTO categorias_despesas (id,nome_categoria) values (2,'Impostos');
+INSERT INTO categorias_despesas (id,nome_categoria) values (3,'Taxas Financeiras');
 
 INSERT OR IGNORE INTO cofres_saldo (unidade_id, cofre_id, saldo_atual) VALUES (1, 1, 0);
+
+
+-- TABELAS ATUALIZADAS E NÃO  MODIFICADAS
+
+-- CAMPO STATUS TABELA DESPESAS INICIO --
+
+CREATE TABLE IF NOT EXISTS status_despesas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+-- Carga inicial de dados para referência
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (1, 'PENDENTE');
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (2, 'PAGO');
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (3, 'ATRASADO');
+INSERT OR IGNORE INTO status_despesas (id, nome) VALUES (4, 'CANCELADO');
+
+CREATE TABLE IF NOT EXISTS despesas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unidade_id INTEGER NOT NULL,
+    recorrente_id INTEGER,
+    id_categoria INTEGER,
+    descricao TEXT,
+    valor INTEGER,
+    data_vencimento DATE,
+    mes_referencia TEXT,
+    data_pagamento DATE,
+    id_status INTEGER DEFAULT 1, -- Alterado de TEXT para INTEGER (FK)
+    FOREIGN KEY (id_categoria) REFERENCES categorias_despesas (id),
+    FOREIGN KEY (id_status) REFERENCES status_despesas (id)
+);
+
+-- CAMPO STATUS TABELA DESPESAS FIM --
+
+-- CAMPO CANAL AQUISIÇÃO TABELA ALUNOS INICIO --
+
+CREATE TABLE IF NOT EXISTS canais_aquisicao (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+-- Carga inicial de dados sugerida
+INSERT OR IGNORE INTO canais_aquisicao (id, nome) VALUES (1, 'Indicação');
+INSERT OR IGNORE INTO canais_aquisicao (id, nome) VALUES (2, 'Redes Sociais (Instagram/Facebook)');
+INSERT OR IGNORE INTO canais_aquisicao (id, nome) VALUES (3, 'Fachada / Passou na Frente');
+INSERT OR IGNORE INTO canais_aquisicao (id, nome) VALUES (4, 'Panfletagem / Escola');
+INSERT OR IGNORE INTO canais_aquisicao (id, nome) VALUES (5, 'Google / Site');
+INSERT OR IGNORE INTO canais_aquisicao (id, nome) VALUES (6, 'Outros');
+
+CREATE TABLE IF NOT EXISTS alunos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unidade_id INTEGER NOT NULL,
+    nome TEXT NOT NULL,
+    responsavel_nome TEXT,
+    cpf_responsavel TEXT, 
+    id_canal_aquisicao INTEGER, -- Alterado de TEXT para FK
+    data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (unidade_id) REFERENCES unidades (id),
+    FOREIGN KEY (id_canal_aquisicao) REFERENCES canais_aquisicao (id)
+);
+
+-- CAMPO CANAL AQUISIÇÃO TABELA ALUNOS FIM --
+
+
+-- CAMPO TIPO CONTRATAÇÃO TABELA FUNCIONÁRIOS INICIO --
+
+CREATE TABLE IF NOT EXISTS tipos_contratacao (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+-- Carga inicial de dados
+INSERT OR IGNORE INTO tipos_contratacao (id, nome) VALUES (1, 'CLT (Efetivo)');
+INSERT OR IGNORE INTO tipos_contratacao (id, nome) VALUES (2, 'PJ (Prestador de Serviço)');
+INSERT OR IGNORE INTO tipos_contratacao (id, nome) VALUES (3, 'Estágio');
+INSERT OR IGNORE INTO tipos_contratacao (id, nome) VALUES (4, 'Temporário');
+INSERT OR IGNORE INTO tipos_contratacao (id, nome) VALUES (5, 'Jovem Aprendiz');
+INSERT OR IGNORE INTO tipos_contratacao (id, nome) VALUES (6, 'Freelancer / Autônomo');
+
+CREATE TABLE IF NOT EXISTS funcionarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unidade_id INTEGER NOT NULL,
+    nome TEXT NOT NULL,
+    id_tipo_contratacao INTEGER, -- Alterado de TEXT para FK
+    salario_base INTEGER,
+    data_contratacao DATE,
+    dia_pagamento_salario INTEGER,
+    ativo BOOLEAN DEFAULT 1,
+    data_demissao DATE,
+    FOREIGN KEY (unidade_id) REFERENCES unidades (id),
+    FOREIGN KEY (id_tipo_contratacao) REFERENCES tipos_contratacao (id)
+);
+
+-- CAMPO TIPO CONTRATAÇÃO TABELA FUNCIONÁRIOS FIM --
+
+
+-- CAMPO DISCIPLINA TABELA MATRICULAS INICIO --
+
+CREATE TABLE IF NOT EXISTS disciplinas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+-- Carga inicial de dados (Baseada no portfólio padrão do Kumon)
+INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (1, 'Matemática');
+INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (2, 'Português');
+INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (3, 'Inglês');
+INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (4, 'Japonês');
+INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (5, 'Kokugo'); -- Para alunos fluentes em japonês, se aplicável
+
+CREATE TABLE IF NOT EXISTS matriculas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unidade_id INTEGER NOT NULL,
+    aluno_id INTEGER,
+    id_disciplina INTEGER NOT NULL, -- Alterado de TEXT para FK
+    data_inicio DATE,
+    valor_acordado INTEGER NOT NULL,
+    dia_vencimento INTEGER DEFAULT 10,
+    justificativa_desconto TEXT,
+    ativo BOOLEAN DEFAULT 1,
+    bolsa_ativa BOOLEAN DEFAULT 0,
+    bolsa_meses_restantes INTEGER DEFAULT 0,
+    data_fim DATE,
+    FOREIGN KEY (unidade_id) REFERENCES unidades (id),
+    FOREIGN KEY (aluno_id) REFERENCES alunos (id),
+    FOREIGN KEY (id_disciplina) REFERENCES disciplinas (id)
+);
+
+-- CAMPO DISCIPLINA TABELA MATRICULAS FIM --
+
+-- CAMPO STATUS/TIPO TABELA PAGAMENTOS INICIO --
+
+CREATE TABLE IF NOT EXISTS status_pagamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+INSERT OR IGNORE INTO status_pagamentos (id, nome) VALUES (1, 'PENDENTE');
+INSERT OR IGNORE INTO status_pagamentos (id, nome) VALUES (2, 'PAGO');
+INSERT OR IGNORE INTO status_pagamentos (id, nome) VALUES (3, 'ATRASADO');
+INSERT OR IGNORE INTO status_pagamentos (id, nome) VALUES (4, 'CANCELADO');
+INSERT OR IGNORE INTO status_pagamentos (id, nome) VALUES (5, 'ESTORNADO');
+
+CREATE TABLE IF NOT EXISTS tipos_pagamento (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+-- Carga inicial sugerida para o contexto Kumon/Escola
+INSERT OR IGNORE INTO tipos_pagamento (id, nome) VALUES (1, 'Mensalidade');
+INSERT OR IGNORE INTO tipos_pagamento (id, nome) VALUES (2, 'Taxa de Matrícula');
+INSERT OR IGNORE INTO tipos_pagamento (id, nome) VALUES (3, 'Material Didático');
+INSERT OR IGNORE INTO tipos_pagamento (id, nome) VALUES (4, 'Multa / Juros');
+INSERT OR IGNORE INTO tipos_pagamento (id, nome) VALUES (5, 'Outros');
+
+CREATE TABLE IF NOT EXISTS formas_pagamento (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL UNIQUE
+);
+
+-- Carga inicial de dados
+INSERT OR IGNORE INTO formas_pagamento (id, nome) VALUES (1, 'Boleto Bancário');
+INSERT OR IGNORE INTO formas_pagamento (id, nome) VALUES (2, 'Pix');
+INSERT OR IGNORE INTO formas_pagamento (id, nome) VALUES (3, 'Dinheiro / Espécie');
+INSERT OR IGNORE INTO formas_pagamento (id, nome) VALUES (4, 'Cartão de Crédito');
+INSERT OR IGNORE INTO formas_pagamento (id, nome) VALUES (5, 'Cartão de Débito');
+INSERT OR IGNORE INTO formas_pagamento (id, nome) VALUES (6, 'Transferência / DOC / TED');
+INSERT OR IGNORE INTO formas_pagamento (id, nome) VALUES (7, 'Cheque');
+
+CREATE TABLE IF NOT EXISTS pagamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unidade_id INTEGER NOT NULL,
+    matricula_id INTEGER,
+    aluno_id INTEGER,
+    mes_referencia TEXT,
+    valor_pago INTEGER,
+    data_vencimento DATE,
+    data_pagamento DATE,
+    id_status INTEGER DEFAULT 1,          -- FK: Pendente
+    id_tipo INTEGER DEFAULT 1,            -- FK: Mensalidade
+    id_forma_pagamento INTEGER,           -- Alterado de TEXT para FK
+    FOREIGN KEY (unidade_id) REFERENCES unidades (id),
+    FOREIGN KEY (matricula_id) REFERENCES matriculas (id),
+    FOREIGN KEY (aluno_id) REFERENCES alunos (id),
+    FOREIGN KEY (id_status) REFERENCES status_pagamentos (id),
+    FOREIGN KEY (id_tipo) REFERENCES tipos_pagamento (id),
+    FOREIGN KEY (id_forma_pagamento) REFERENCES formas_pagamento (id)
+);
+
+-- CAMPO STATUS/TIPO TABELA PAGAMENTOS FIM --
+
+-- Executar inserção após inserir usuário ADM
+
+-- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 1);
+-- INSERT OR IGNORE INTO usuario_unidades (usuario_username, unidade_id) VALUES ('admin', 2)

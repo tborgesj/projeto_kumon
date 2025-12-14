@@ -13,6 +13,11 @@ auth.barra_lateral()
 unidade_atual = st.session_state.get('unidade_ativa')
 if not unidade_atual: st.error("Erro Unidade"); st.stop()
 
+# [NOVO] Carregar formas de pagamento do banco
+lista_formas = db.buscar_formas_pagamento() # Retorna [{'id':1, 'nome':'Boleto'}, ...]
+dict_formas = {f['nome']: f['id'] for f in lista_formas}
+opcoes_formas = list(dict_formas.keys())
+
 # --- ROBÔ AUTOMÁTICO (Executa ao abrir a tela) ---
 try:
     # Chama a função blindada do banco silenciosamente
@@ -72,12 +77,19 @@ def popup_receber(id_pagamento, valor_bruto, nome_aluno):
     st.markdown("---")
     
     with st.form("form_recebimento"):
-        forma = st.selectbox("Forma de Pagamento", ["Dinheiro", "Pix", "Boleto", "Débito", "Crédito"])
+        
+        # [ALTERADO] Selectbox dinâmico
+        nome_forma = st.selectbox("Forma de Pagamento", opcoes_formas)
+        
         st.caption("Se houver taxa de maquininha, informe abaixo para lançar como despesa.")
         taxa = st.number_input("Valor da Taxa (R$)", min_value=0.0, step=0.50)
         
         if st.form_submit_button("💰 Confirmar Recebimento"):
             try:
+
+                # Recupera o ID baseado no nome escolhido
+                id_forma_selecionada = dict_formas[nome_forma]
+
                 # Recupera a unidade da sessão
                 unidade = st.session_state.get('unidade_ativa')
                 
@@ -85,7 +97,7 @@ def popup_receber(id_pagamento, valor_bruto, nome_aluno):
                 db.registrar_recebimento(
                     unidade_id=unidade,
                     pagamento_id=id_pagamento,
-                    forma=forma,
+                    id_forma=id_forma_selecionada,
                     taxa=taxa,
                     nome_aluno=nome_aluno
                 )

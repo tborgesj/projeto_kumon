@@ -17,6 +17,10 @@ if not unidade_atual:
 
 st.title(f"👥 Gestão de Funcionários - {nome_unidade}")
 
+lista_tipos = db.buscar_tipos_contratacao()
+dict_tipos = {t['nome']: t['id'] for t in lista_tipos}
+opcoes_tipos = list(dict_tipos.keys())
+
 # Utilitário visual (apenas formatação)
 def format_brl(val): 
     return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -45,8 +49,8 @@ with tab1:
     with st.container():
         c1, c2 = st.columns(2)
         nome = c1.text_input("Nome Completo", key="n_nome")
-        tipo = c2.selectbox("Contratação", ["CLT", "Horista", "Estagiário", "Jovem Aprendiz", "Temporário", "Autônomo (PJ)"], key="n_tipo")
-        
+        nome_tipo_sel = c2.selectbox("Contratação", options=opcoes_tipos, key="n_tipo")
+
         c3, c4 = st.columns(2)
         salario = c3.number_input("Salário Base (R$)", min_value=0.0, step=100.0, key="n_sal")
         dia_pag = c4.number_input("Dia Pagamento", 1, 31, 5, key="n_dia")
@@ -95,11 +99,14 @@ with tab1:
             st.error("Nome é obrigatório.")
         else:
             try:
+
+                id_tipo_sel = dict_tipos.get(nome_tipo_sel)
+
                 # Chama função transacional do Backend
                 db.cadastrar_funcionario_completo(
                     unidade_id=unidade_atual,
                     nome=nome,
-                    tipo=tipo,
+                    id_tipo=id_tipo_sel,
                     salario=salario,
                     dia_pag=dia_pag,
                     lista_custos_iniciais=st.session_state['temp_custos']
@@ -142,8 +149,13 @@ with tab2:
                 with st.form(key=f"edit_func_{func_id_sel}"):
                     ce1, ce2 = st.columns(2)
                     n_nome = ce1.text_input("Nome", value=f_data[2])
-                    n_tipo = ce2.selectbox("Contrato", ["CLT", "Horista", "Estagiário", "Jovem Aprendiz", "Temporário", "Autônomo (PJ)"], index=["CLT", "Horista", "Estagiário", "Jovem Aprendiz", "Temporário", "Autônomo (PJ)"].index(f_data[3]) if f_data[3] in ["CLT", "Horista", "Estagiário", "Jovem Aprendiz", "Temporário", "Autônomo (PJ)"] else 0)
+
+                    id_tipo_atual = f_data[3]
+                    nome_tipo_atual = next((k for k, v in dict_tipos.items() if v == id_tipo_atual), None)
+                    idx_tipo = opcoes_tipos.index(nome_tipo_atual) if nome_tipo_atual in opcoes_tipos else 0
                     
+                    n_tipo_nome = ce2.selectbox("Contrato", options=opcoes_tipos, index=idx_tipo)
+
                     ce3, ce4 = st.columns(2)
                     n_sal = ce3.number_input("Salário (R$)", value=float(f_data[4]), step=100.0)
                     n_dia = ce4.number_input("Dia Pagamento", value=int(f_data[6]), min_value=1, max_value=31)
@@ -158,6 +170,9 @@ with tab2:
                     
                     if st.form_submit_button("Atualizar Dados Básicos"):
                         try:
+                            # Passa o ID
+                            n_tipo_id = dict_tipos[n_tipo_nome]
+
                             # Prepara data de demissão para string se necessário
                             dem_str = dt_demissao if not novo_status else None
                             
@@ -165,7 +180,7 @@ with tab2:
                             db.atualizar_funcionario_completo(
                                 func_id=func_id_sel,
                                 nome_novo=n_nome,
-                                tipo=n_tipo,
+                                id_tipo=n_tipo_id,
                                 salario=n_sal,
                                 dia=n_dia,
                                 ativo=novo_status,

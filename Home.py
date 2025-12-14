@@ -68,8 +68,8 @@ if dados:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Alunos Ativos", dados['alunos_ativos'], delta="Base Atual")
     c2.metric("Alunos Ausentes", dados['alunos_ausentes'], delta="Base Atual")
-    c3.metric("Receita (Mês)", format_brl(db.from_cents(dados['rec_total'])), delta="Entradas Previstas")
-    c4.metric("Despesa (Mês)", format_brl(db.from_cents(dados['desp_total'])), delta="Saídas Previstas", delta_color="inverse")
+    c3.metric("Receita (Mês)", format_brl(dados['rec_total']), delta="Entradas Previstas")
+    c4.metric("Despesa (Mês)", format_brl(dados['desp_total']), delta="Saídas Previstas", delta_color="inverse")
     
     cor_saldo = "normal" if dados['saldo_previsto'] >= 0 else "inverse"
     c5.metric("Resultado (Previsto)", format_brl(dados['saldo_previsto']), delta="Lucro/Prejuízo", delta_color=cor_saldo)
