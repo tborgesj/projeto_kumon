@@ -74,20 +74,20 @@ def realizar_matricula_completa(unidade_id, dados_aluno, lista_disciplinas, dia_
     finally:
         conn.close()
 
-def buscar_alunos_por_nome(unidade_id, termo_busca=""):
-    """
-    Busca alunos para o seletor. Se termo_busca vazio, traz últimos 50.
-    """
-    conn = conectar()
-    try:
-        if termo_busca:
-            query = "SELECT id, nome FROM alunos WHERE unidade_id=? AND nome LIKE ? ORDER BY nome LIMIT 50"
-            return pd.read_sql_query(query, conn, params=(unidade_id, f"%{termo_busca}%"))
-        else:
-            query = "SELECT id, nome FROM alunos WHERE unidade_id=? ORDER BY id DESC LIMIT 50"
-            return pd.read_sql_query(query, conn, params=(unidade_id,))
-    finally:
-        conn.close()
+# def buscar_alunos_por_nome(unidade_id, termo_busca=""):
+#     """
+#     Busca alunos para o seletor. Se termo_busca vazio, traz últimos 50.
+#     """
+#     conn = conectar()
+#     try:
+#         if termo_busca:
+#             query = "SELECT id, nome FROM alunos WHERE unidade_id=? AND nome LIKE ? ORDER BY nome LIMIT 50"
+#             return pd.read_sql_query(query, conn, params=(unidade_id, f"%{termo_busca}%"))
+#         else:
+#             query = "SELECT id, nome FROM alunos WHERE unidade_id=? ORDER BY id DESC LIMIT 50"
+#             return pd.read_sql_query(query, conn, params=(unidade_id,))
+#     finally:
+#         conn.close()
 
 def buscar_dados_aluno_completo(aluno_id: int):
     """Retorna dados cadastrais do aluno."""
@@ -282,5 +282,89 @@ def buscar_dados_para_doc_word(aluno_id, unidade_id):
             'matricula': mat,
             'taxa': db.from_cents(param[0]) if param else 0
         }
+    finally:
+        conn.close()
+
+# No arquivo repositories/alunos_rps.py
+
+def listar_alunos_grid(unidade_id: int, termo: str = "", filtro_status: str = "Ativos"):
+    """
+    Busca alunos otimizada para Dataframe com cálculo de status.
+    filtro_status: "Ativos", "Inativos", "Todos"
+    """
+    conn = conectar()
+    try:
+        # 1. Base da Query: Trazemos o status calculado com base na existência de matrículas ativas
+        # O CASE WHEN verifica se existe pelo menos uma matrícula com ativo=1 para aquele aluno
+        sql = """
+            SELECT 
+                a.id, 
+                CASE 
+                    WHEN EXISTS (SELECT 1 FROM matriculas m WHERE m.aluno_id = a.id AND m.ativo = 1) THEN 'Ativo' 
+                    ELSE 'Inativo' 
+                END as status,
+                a.nome, 
+                a.responsavel_nome,
+                a.cpf_responsavel
+            FROM alunos a
+            WHERE a.unidade_id = ?
+        """
+        params = [unidade_id]
+
+        # 2. Aplica Filtro de Texto (Nome ou CPF)
+        if termo:
+            sql += " AND (a.nome LIKE ? OR a.cpf_responsavel LIKE ?)"
+            termo_like = f"%{termo}%"
+            params.extend([termo_like, termo_like])
+
+        # 3. Ordenação (Ativos primeiro, depois ordem alfabética)
+        sql += " ORDER BY status ASC, a.nome ASC"
+
+        # Carrega no Pandas
+        df = pd.read_sql_query(sql, conn, params=params)
+
+        # 4. Filtragem do DataFrame (Mais prático fazer no Pandas do que complicar o SQL dinâmico agora)
+        if filtro_status == "Ativos":
+            df = df[df['status'] == 'Ativo']
+        elif filtro_status == "Inativos":
+            df = df[df['status'] == 'Inativo']
+        
+        return df
+
+    finally:
+        conn.close()
+
+# No arquivo repositories/alunos_rps.py
+
+def atualizar_valor_matricula(matricula_id: int, novo_valor: float, unidade_id: int):
+    """
+    Atualiza o valor acordado da matrícula e recalcula a mensalidade pendente (se houver).
+    """
+    conn = conectar()
+    try:
+        with conn:
+            # 1. Atualiza o valor base na matrícula
+            valor_cents = db.to_cents(novo_valor)
+            conn.execute("UPDATE matriculas SET valor_acordado=? WHERE id=?", (valor_cents, matricula_id))
+            
+            # 2. Verifica se tem bolsa ativa para calcular o valor líquido correto
+            row = conn.execute("SELECT bolsa_ativa FROM matriculas WHERE id=?", (matricula_id,)).fetchone()
+            tem_bolsa = row[0] if row else 0
+            
+            # Se tiver bolsa, aplica os 50% (regra do seu sistema)
+            novo_valor_final = valor_cents
+            if tem_bolsa:
+                novo_valor_final = int(valor_cents * 0.5)
+            
+            # 3. Atualiza apenas boletos PENDENTES (id_status=1) desta matrícula
+            # Isso garante que o boleto deste mês já venha com o valor corrigido
+            conn.execute("""
+                UPDATE pagamentos 
+                SET valor_pago=? 
+                WHERE matricula_id=? AND id_status=1 AND unidade_id=?
+            """, (novo_valor_final, matricula_id, unidade_id))
+            
+    except Exception as e:
+        raise e
     finally:
         conn.close()

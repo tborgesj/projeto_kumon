@@ -250,8 +250,8 @@ CREATE TABLE IF NOT EXISTS disciplinas (
 INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (1, 'Matemática');
 INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (2, 'Português');
 INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (3, 'Inglês');
-INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (4, 'Japonês');
-INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (5, 'Kokugo'); -- Para alunos fluentes em japonês, se aplicável
+-- INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (4, 'Japonês');
+-- INSERT OR IGNORE INTO disciplinas (id, nome) VALUES (5, 'Kokugo'); -- Para alunos fluentes em japonês, se aplicável
 
 
 
