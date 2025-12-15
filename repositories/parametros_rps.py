@@ -1,22 +1,8 @@
-import sys
-import os
-
-# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
-diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-
-# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
-diretorio_raiz = os.path.dirname(diretorio_atual)
-
-# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
-sys.path.append(diretorio_raiz)
-
-# --- FIM DA CONFIGURAÇÃO DE CAMINHO ---
-
-# import sqlite3
 from typing import Optional
 from conectDB.conexao import conectar
 import pandas as pd
 from calendar import monthrange
+import database as db
 
 
 def atualizar_parametros_unidade(unidade_id: int, mensalidade: float, taxa: float, em_campanha: bool) -> None:
@@ -28,7 +14,7 @@ def atualizar_parametros_unidade(unidade_id: int, mensalidade: float, taxa: floa
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(unidade_id) DO UPDATE SET em_campanha_matricula=excluded.em_campanha_matricula,
                     valor_taxa_matricula=excluded.valor_taxa_matricula, valor_mensalidade_padrao=excluded.valor_mensalidade_padrao
-            ''', (unidade_id, _bool_to_int(em_campanha), to_cents(taxa), to_cents(mensalidade)))
+            ''', (unidade_id, db._bool_to_int(em_campanha), db.to_cents(taxa), db.to_cents(mensalidade)))
     finally:
         conn.close()
 
@@ -59,7 +45,7 @@ def adicionar_royalty(unidade_id: int, valor: float, inicio: str) -> None:
     conn = conectar()
     try:
         with conn:
-            conn.execute("INSERT INTO config_royalties (unidade_id, valor, ano_mes_inicio) VALUES (?, ?, ?)", (unidade_id, to_cents(valor), inicio))
+            conn.execute("INSERT INTO config_royalties (unidade_id, valor, ano_mes_inicio) VALUES (?, ?, ?)", (unidade_id, db.to_cents(valor), inicio))
     finally:
         conn.close()
 

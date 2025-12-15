@@ -53,11 +53,12 @@ def show_success(msg):
 @st.dialog("Conceder Bolsa")
 def popup_bolsa(mid, disc, val_base):
     st.write(f"**Disciplina:** {disc}")
-    st.write(f"**Valor Base:** {g_svc.format_brl(val_base)}")
+    st.write(f"**Valor Base:** {g_svc.format_brl(db.from_cents(val_base))}")
     st.info("A bolsa aplica 50% de desconto por um período determinado.")
+
     
     meses = st.number_input("Duração (Meses)", 1, 12, 6)
-    st.write(f"Novo Valor: **{g_svc.format_brl(val_base * 0.5)}**")
+    st.write(f"Novo Valor: **{g_svc.format_brl(db.from_cents(val_base) * 0.5)}**")
     
     if st.button("✅ Confirmar Bolsa"):
         try:
