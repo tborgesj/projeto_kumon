@@ -3,7 +3,6 @@ from conectDB.conexao import conectar
 
 import bcrypt
 
-
 def _gerar_hash_bcrypt(senha_plana: str) -> str:
     """Gera um hash seguro usando Bcrypt com Salt automático."""
     # Bcrypt trabalha com bytes, então codificamos a string
@@ -18,6 +17,26 @@ def _verificar_senha_bcrypt(senha_plana: str, hash_banco: str) -> bool:
         return bcrypt.checkpw(senha_plana.encode('utf-8'), hash_banco.encode('utf-8'))
     except ValueError:
         return False
+
+def verifica_usuario_existe(username):
+    """
+    Cria o usuário e vincula as unidades em uma TRANSAÇÃO ÚNICA.
+    """
+    conn = conectar()
+    try:
+        row = conn.execute("SELECT 1 FROM usuarios WHERE username = ?", (username,)).fetchone()
+
+        if row:
+            return True
+        else:
+            return False
+
+    except Exception as e:
+        print(f"Erro ao verificar usuário: {e}")
+        return False # Em caso de erro, assumimos False ou tratamos conforme necessidade
+    finally:
+        conn.close()
+
 
 
 def criar_usuario_completo(username, password_hash, nome, is_admin, lista_unidades_ids):
