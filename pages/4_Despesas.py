@@ -82,7 +82,9 @@ with tab1:
             )
 
             c3, c4 = st.columns(2)
-            valor = c3.number_input("Valor (R$)", min_value=0.0, step=10.0)
+            valor = c3.number_input("Valor (R$)", min_value=0.0, step=10.0, format="%.2f")
+
+            valor_final = round(valor, 2)
             
             # Lógica visual de inputs
             dia_venc = 10
@@ -94,7 +96,7 @@ with tab1:
             else:
                 dt_avulsa = c4.date_input("Data de Vencimento", value=date.today())
             
-            if st.form_submit_button("💾 Salvar Despesa"):
+            if st.form_submit_button("💾 Salvar Despesa1"):
                 if not desc:
                     st.error("A descrição é obrigatória.")
                 else:
@@ -105,7 +107,7 @@ with tab1:
                                 unidade_id=unidade_atual,
                                 categoria=categoria_id,
                                 descricao=desc,
-                                valor=valor,
+                                valor=valor_final,
                                 dia_vencimento=dia_venc
                             )
                             st.success("Despesa Fixa criada! A primeira conta já está no Financeiro.")
