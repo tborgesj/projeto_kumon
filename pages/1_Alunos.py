@@ -17,6 +17,7 @@ import streamlit as st
 import database as db
 import auth
 import time
+from datetime import date
 
 # Tenta importar docxtpl para gerar contratos
 try:
@@ -160,8 +161,11 @@ with tab1:
         # canal = col_m.selectbox("Canal", ["Indicação", "Google", "Instagram", "Passante", "Outro"])
         nome_canal_selecionado = col_m.selectbox("Canal", opcoes_canais)
         
-        col_v, col_t = st.columns(2)
+        col_v, col_d, col_t = st.columns([1, 1, 1])
         dia_venc = col_v.number_input("Dia de Vencimento", 1, 31, 10)
+
+        # NOVO CAMPO: Data de Inclusão/Matrícula
+        dt_matricula = col_d.date_input("Data da Matrícula", value=date.today())
         
         # Taxa de Matrícula (Lógica Visual)
         v_taxa = 0.0
@@ -176,8 +180,8 @@ with tab1:
         if submitted:
             cpf_clean = g_svc.limpar_cpf(cpf_input)
             
-            if not nome or not resp or not st.session_state['disciplinas_temp']:
-                st.error("Preencha Nome, Responsável e Disciplinas.")
+            if not nome or not cpf_clean or not resp or not st.session_state['disciplinas_temp']:
+                st.error("Preencha Nome, CPF, Responsável e Disciplinas.")
             elif cpf_clean and not g_svc.validar_cpf(cpf_clean):
                 st.error("CPF Inválido!")
             else:
@@ -200,7 +204,8 @@ with tab1:
                         lista_disciplinas=st.session_state['disciplinas_temp'],
                         dia_vencimento=dia_venc,
                         valor_taxa=v_taxa,
-                        campanha_ativa=params['campanha'] if params else False
+                        campanha_ativa=params['campanha'] if params else False,
+                        data_matricula_dt=dt_matricula
                     )
                     
                     st.session_state['disciplinas_temp'] = []

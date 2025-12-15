@@ -7,62 +7,109 @@ from calendar import monthrange
 import database as db
 
 
-def realizar_matricula_completa(unidade_id, dados_aluno, lista_disciplinas, dia_vencimento, valor_taxa, campanha_ativa):
+def realizar_matricula_completa(unidade_id, dados_aluno, lista_disciplinas, dia_vencimento, valor_taxa, campanha_ativa, data_matricula_dt):
     """
     Realiza todo o processo de matrícula em uma única transação atômica.
     - Cria Aluno
     - Cria Matrículas
     - Gera 1ª Mensalidade
     - Gera Taxa de Matrícula (se houver)
+    
+    Realiza a matrícula considerando a data de referência para cálculo do pro-rata.
+    Regras:
+    - 01 a 10: 100% valor (Mês Atual)
+    - 11 a 20: 50% valor (Mês Atual)
+    - 21 a 31: 100% valor (Próximo Mês)
     """
     conn = conectar()
     try:
-        # Helper de data para calcular vencimentos
-        def get_valid_date_local(year, month, day):
-            try:
-                return date(year, month, day)
-            except ValueError:
-                if month == 12: return date(year, 12, 31)
-                return date(year, month + 1, 1) - pd.Timedelta(days=1)
+        # Helper simples para garantir dia útil (pula fds)
+        def _proximo_dia_util(d):
+            wd = d.weekday() # 5=Sábado, 6=Domingo
+            if wd == 5: return d + pd.Timedelta(days=2)
+            if wd == 6: return d + pd.Timedelta(days=1)
+            return d
 
-        hj = datetime.now()
+        # 1. Definição do Cenário Financeiro
+        dia_ref = data_matricula_dt.day
+        mes_ref = data_matricula_dt.month
+        ano_ref = data_matricula_dt.year
         
-        # Regra de Negócio: Se dia > 20, cobra só no próximo mês
-        mes_cob = hj.month if hj.day <= 20 else hj.month + 1
-        ano_cob = hj.year
-        if mes_cob > 12: 
-            mes_cob = 1; ano_cob += 1
-            
-        mes_ref = f"{mes_cob:02d}/{ano_cob}"
-        dt_venc_mensal = get_valid_date_local(ano_cob, mes_cob, dia_vencimento)
+        fator_pagamento = 1.0 # 100%
+        
+        # Data base do vencimento (no mês da matrícula)
+        # Tenta criar a data, se dia 31 não existir em Fev, ajusta.
+        try:
+            dt_venc_base = date(ano_ref, mes_ref, dia_vencimento)
+        except ValueError:
+             # Pega o último dia do mês se o dia escolhido não existir (ex: 30 de fev)
+            max_day = monthrange(ano_ref, mes_ref)[1]
+            dt_venc_base = date(ano_ref, mes_ref, max_day)
 
-        with conn: # INÍCIO DA TRANSAÇÃO (Tudo ou Nada)
-            # 1. Cria Aluno
+        # LÓGICA DAS 3 FAIXAS
+        if 21 <= dia_ref <= 31:
+            # Cenário 3: Joga para o próximo mês
+            dt_venc_real = dt_venc_base + pd.DateOffset(months=1)
+            # Recalcula string MM/YYYY
+            mes_str = dt_venc_real.strftime("%m/%Y")
+            # Fator continua 1.0
+            
+        elif 11 <= dia_ref <= 20:
+            # Cenário 2: Mês atual, 50%
+            fator_pagamento = 0.5
+            mes_str = data_matricula_dt.strftime("%m/%Y")
+            
+            # Se o dia do vencimento já passou em relação à data da matrícula
+            if dt_venc_base < data_matricula_dt:
+                # Vence no dia seguinte da matrícula (ou próximo útil)
+                dt_venc_real = _proximo_dia_util(data_matricula_dt + pd.Timedelta(days=1))
+            else:
+                dt_venc_real = _proximo_dia_util(dt_venc_base)
+                
+        else: # 01 a 10
+            # Cenário 1: Mês atual, 100%
+            fator_pagamento = 1.0
+            mes_str = data_matricula_dt.strftime("%m/%Y")
+            
+            if dt_venc_base < data_matricula_dt:
+                dt_venc_real = _proximo_dia_util(data_matricula_dt + pd.Timedelta(days=1))
+            else:
+                dt_venc_real = _proximo_dia_util(dt_venc_base)
+
+        # ---------------------------------------------------------
+
+        with conn: # INÍCIO DA TRANSAÇÃO
+            # 1. Cria Aluno (Usando a data de matrícula informada, não 'now')
             cur = conn.execute("""
                 INSERT INTO alunos (unidade_id, nome, responsavel_nome, cpf_responsavel, id_canal_aquisicao, data_cadastro)
-                VALUES (?, ?, ?, ?, ?, DATE('now'))
-            """, (unidade_id, dados_aluno['nome'], dados_aluno['responsavel'], dados_aluno['cpf'], dados_aluno['id_canal'])) # Note: dados_aluno['id_canal']
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (unidade_id, dados_aluno['nome'], dados_aluno['responsavel'], dados_aluno['cpf'], dados_aluno['id_canal'], data_matricula_dt))
             aid = cur.lastrowid
             
             # 2. Processa Disciplinas
             for item in lista_disciplinas:
+                valor_cheio_cents = db.to_cents(item['val'])
+                
                 # Cria Matrícula
                 cur.execute("""
                     INSERT INTO matriculas (unidade_id, aluno_id, id_disciplina, valor_acordado, dia_vencimento, justificativa_desconto, data_inicio, ativo) 
-                    VALUES (?,?,?,?,?,?,DATE('now'),1)
-                """, (unidade_id, aid, item['id_disc'], db.to_cents(item['val']), dia_vencimento, item['just']))
+                    VALUES (?,?,?,?,?,?,?,1)
+                """, (unidade_id, aid, item['id_disc'], valor_cheio_cents, dia_vencimento, item['just'], data_matricula_dt))
                 mid = cur.lastrowid
                 
-                # Gera 1ª Mensalidade
+                # Gera 1ª Mensalidade (Com fator aplicado)
+                valor_primeira_parc = int(valor_cheio_cents * fator_pagamento)
+                
                 cur.execute("""
                     INSERT INTO pagamentos (unidade_id, matricula_id, aluno_id, mes_referencia, data_vencimento, valor_pago, id_status, id_tipo) 
                     VALUES (?,?,?,?,?,?, 1, 1)
-                """, (unidade_id, mid, aid, mes_ref, dt_venc_mensal, db.to_cents(item['val'])))
+                """, (unidade_id, mid, aid, mes_str, dt_venc_real, valor_primeira_parc))
             
-            # 3. Taxa de Matrícula (id_status=1 Pendente, id_tipo=2 Taxa Matrícula)
+            # 3. Taxa de Matrícula (Essa geralmente não tem desconto pro-rata, segue cheia)
             if not campanha_ativa and valor_taxa > 0:
-                dt_tx = date.today() + pd.Timedelta(days=1) # Vence amanhã
-                mes_ref_tx = dt_tx.strftime("%m/%Y")
+                # Vence junto com a primeira mensalidade para facilitar
+                dt_tx = dt_venc_real 
+                mes_ref_tx = mes_str
                 
                 conn.execute("""
                     INSERT INTO pagamentos (unidade_id, aluno_id, mes_referencia, data_vencimento, valor_pago, id_status, id_tipo) 
@@ -74,20 +121,6 @@ def realizar_matricula_completa(unidade_id, dados_aluno, lista_disciplinas, dia_
     finally:
         conn.close()
 
-# def buscar_alunos_por_nome(unidade_id, termo_busca=""):
-#     """
-#     Busca alunos para o seletor. Se termo_busca vazio, traz últimos 50.
-#     """
-#     conn = conectar()
-#     try:
-#         if termo_busca:
-#             query = "SELECT id, nome FROM alunos WHERE unidade_id=? AND nome LIKE ? ORDER BY nome LIMIT 50"
-#             return pd.read_sql_query(query, conn, params=(unidade_id, f"%{termo_busca}%"))
-#         else:
-#             query = "SELECT id, nome FROM alunos WHERE unidade_id=? ORDER BY id DESC LIMIT 50"
-#             return pd.read_sql_query(query, conn, params=(unidade_id,))
-#     finally:
-#         conn.close()
 
 def buscar_dados_aluno_completo(aluno_id: int):
     """Retorna dados cadastrais do aluno."""
@@ -218,18 +251,7 @@ def inativar_aluno_completo(aluno_id):
 
 def buscar_historico_financeiro_aluno(aluno_id, unidade_id):
     """Retorna DataFrame de pagamentos do aluno."""
-    # conn = conectar()
-    # try:
-    #     return pd.read_sql_query("""
-    #         SELECT p.mes_referencia, p.valor_pago, s.nome as status, t.nome as tipo 
-    #         FROM pagamentos p
-    #         JOIN status_pagamentos s ON p.id_status = s.id
-    #         JOIN tipos_pagamento t ON p.id_tipo = t.id
-    #         WHERE p.aluno_id=? AND p.unidade_id=? 
-    #         ORDER BY p.id DESC
-    #     """, conn, params=(aluno_id, unidade_id))
-    # finally:
-    #     conn.close()
+
     conn = conectar()
     try:
         query = """
