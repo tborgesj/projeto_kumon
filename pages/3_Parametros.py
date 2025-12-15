@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import parametros_rps as rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -43,7 +57,7 @@ with tab1:
         if st.form_submit_button("💾 Salvar Valores"):
             try:
                 # Chama a função blindada do backend
-                db.atualizar_parametros_unidade(
+                rps.atualizar_parametros_unidade(
                     unidade_id=unidade_atual,
                     mensalidade=nova_mensalidade,
                     taxa=nova_taxa,
@@ -65,7 +79,7 @@ with tab2:
     st.caption("Configure aqui os valores fixos pagos à franquia para que o robô financeiro lance automaticamente.")
     
     # 1. Busca Segura (Backend)
-    df_roy = db.buscar_royalties(unidade_atual)
+    df_roy = rps.buscar_royalties(unidade_atual)
     
     if not df_roy.empty:
         # Cria uma cópia para formatar o visual sem estragar os dados originais
@@ -78,7 +92,7 @@ with tab2:
             # 2. Ação de Excluir (Backend)
             if st.button(f"🗑️ Apagar regra de {row['ano_mes_inicio']}", key=f"del_roy_{row['id']}"):
                 try:
-                    db.excluir_royalty(row['id'])
+                    rps.excluir_royalty(row['id'])
                     st.success("Regra removida.")
                     time.sleep(0.5)
                     st.rerun()
@@ -102,7 +116,7 @@ with tab2:
             else:
                 try:
                     # Chama função segura do backend
-                    db.adicionar_royalty(unidade_atual, r_val, r_ini)
+                    rps.adicionar_royalty(unidade_atual, r_val, r_ini)
                     st.success("Regra adicionada com sucesso!")
                     time.sleep(1)
                     st.rerun()
@@ -129,7 +143,7 @@ with tab3:
     """)
     
     # 1. Verifica estado atual (Somente Leitura)
-    nome_arquivo = db.buscar_info_modelo_contrato(unidade_atual)
+    nome_arquivo = rps.buscar_info_modelo_contrato(unidade_atual)
     
     if nome_arquivo:
         st.success(f"✅ Modelo Atual: **{nome_arquivo}**")
@@ -137,7 +151,7 @@ with tab3:
         # 2. Botão de Exclusão
         if st.button("🗑️ Remover Modelo Atual"):
             try:
-                db.excluir_modelo_contrato(unidade_atual)
+                rps.excluir_modelo_contrato(unidade_atual)
                 st.success("Modelo removido.")
                 time.sleep(0.5)
                 st.rerun()
@@ -157,7 +171,7 @@ with tab3:
             blob_data = uploaded_file.getvalue()
             
             # Envia para o backend salvar (Atomicamente)
-            db.salvar_modelo_contrato(
+            rps.salvar_modelo_contrato(
                 unidade_id=unidade_atual, 
                 nome_arquivo=uploaded_file.name, 
                 dados_binarios=blob_data

@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import dashboard_rps as rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -29,20 +43,20 @@ conn = db.conectar()
 # --- CARREGAMENTO DE DADOS FINANCEIROS ---
 
 # A. Dados Financeiros por Mês (Para Gráficos)
-df_fin = db.buscar_dados_financeiros_anuais(unidade_atual, ano_sel)
+df_fin = rps.buscar_dados_financeiros_anuais(unidade_atual, ano_sel)
 
 # (O restante do código que usa df_fin para criar o gráfico continua igual...)
 
 # B. Dados de Categoria (Backend)
-df_cat = db.buscar_despesas_por_categoria(unidade_atual, ano_sel)
+df_cat = rps.buscar_despesas_por_categoria(unidade_atual, ano_sel)
 
 # C. Dados de Matrículas (Backend)
-df_mat = db.buscar_distribuicao_matriculas(unidade_atual)
+df_mat = rps.buscar_distribuicao_matriculas(unidade_atual)
 # O cálculo de soma continua sendo feito com o DataFrame retornado
 total_alunos_ativos = df_mat['qtd'].sum() if not df_mat.empty else 0
 
 # D. Inadimplência (Backend)
-df_inad = db.buscar_indicadores_inadimplencia(unidade_atual, ano_sel)
+df_inad = rps.buscar_indicadores_inadimplencia(unidade_atual, ano_sel)
 
 # ... (O restante do código que gera os gráficos continua igual) ...
 
@@ -52,13 +66,13 @@ df_inad = db.buscar_indicadores_inadimplencia(unidade_atual, ano_sel)
 # Nota: Assumimos que o Robô de RH lança na categoria 'Pessoal' ou 'Impostos' mas com descrição clara. 
 # Para simplificar e ser robusto, vamos somar a categoria 'Pessoal' que é onde lançamos salários e benefícios.
 # 1. Custo RH (Pessoal + Impostos) - Backend
-custo_pessoal_ano = db.buscar_custo_rh_anual(unidade_atual, ano_sel)
+custo_pessoal_ano = rps.buscar_custo_rh_anual(unidade_atual, ano_sel)
 
 # 2. Contagem de Funcionários - Backend
-qtd_funcionarios = db.contar_funcionarios_ativos(unidade_atual)
+qtd_funcionarios = rps.contar_funcionarios_ativos(unidade_atual)
 
 # 3. Meses Faturados (Para Ticket Médio) - Backend
-meses_faturados = db.contar_meses_com_faturamento(unidade_atual, ano_sel)
+meses_faturados = rps.contar_meses_com_faturamento(unidade_atual, ano_sel)
 # Proteção contra divisão por zero (Lógica de Interface)
 if meses_faturados == 0: 
     meses_faturados = 1

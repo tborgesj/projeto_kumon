@@ -1,11 +1,24 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import alunos_rps as rps
+from services import geral_svc as g_svc
+
 import streamlit as st
 import pandas as pd
 import database as db
 import auth
-from datetime import datetime, date, timedelta
-import calendar
+from datetime import date, timedelta
 import io
-import re
 import time
 
 # Tenta importar docxtpl para gerar contratos
@@ -27,22 +40,7 @@ if not unidade_atual:
 st.title(f"🎓 Alunos - {st.session_state.get('unidade_nome')}")
 
 # --- FUNÇÕES ÚTEIS (UI/Helpers) ---
-def format_brl(val):
-    if val is None: return "R$ 0,00"
-    return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def limpar_cpf(cpf_str):
-    if not cpf_str: return ""
-    return ''.join(filter(str.isdigit, str(cpf_str)))
-
-def validar_cpf(cpf):
-    if len(cpf) != 11 or cpf == cpf[0] * 11: return False
-    # (Lógica simplificada para manter o código breve, use a sua completa se preferir)
-    return True 
-
-def formatar_cpf(cpf):
-    if len(cpf) != 11: return cpf
-    return f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
 
 # --- POPUP DE SUCESSO ---
 @st.dialog("Sucesso!")
@@ -55,15 +53,15 @@ def show_success(msg):
 @st.dialog("Conceder Bolsa")
 def popup_bolsa(mid, disc, val_base):
     st.write(f"**Disciplina:** {disc}")
-    st.write(f"**Valor Base:** {format_brl(val_base)}")
+    st.write(f"**Valor Base:** {g_svc.format_brl(val_base)}")
     st.info("A bolsa aplica 50% de desconto por um período determinado.")
     
     meses = st.number_input("Duração (Meses)", 1, 12, 6)
-    st.write(f"Novo Valor: **{format_brl(val_base * 0.5)}**")
+    st.write(f"Novo Valor: **{g_svc.format_brl(val_base * 0.5)}**")
     
     if st.button("✅ Confirmar Bolsa"):
         try:
-            db.aplicar_bolsa_desconto(mid, meses, unidade_atual)
+            rps.aplicar_bolsa_desconto(mid, meses, unidade_atual)
             st.success("Bolsa aplicada com sucesso!")
             time.sleep(1)
             st.rerun()
@@ -74,7 +72,7 @@ def popup_bolsa(mid, disc, val_base):
 if 'disciplinas_temp' not in st.session_state: st.session_state['disciplinas_temp'] = []
 
 # Busca parâmetros globais para usar nas abas (taxa, mensalidade padrão)
-params = db.get_parametros_unidade(unidade_atual) 
+params = db.get_parametros_unidade(unidade_atual)
 
 # [NOVO] Carregar lista de canais para os formulários
 lista_canais = db.buscar_canais_aquisicao()
@@ -155,11 +153,11 @@ with tab1:
         submitted = st.form_submit_button("✅ Finalizar Matrícula")
         
         if submitted:
-            cpf_clean = limpar_cpf(cpf_input)
+            cpf_clean = g_svc.limpar_cpf(cpf_input)
             
             if not nome or not resp or not st.session_state['disciplinas_temp']:
                 st.error("Preencha Nome, Responsável e Disciplinas.")
-            elif cpf_clean and not validar_cpf(cpf_clean):
+            elif cpf_clean and not g_svc.validar_cpf(cpf_clean):
                 st.error("CPF Inválido!")
             else:
                 try:
@@ -170,12 +168,12 @@ with tab1:
                     dados_aluno = {
                         'nome': nome, 
                         'responsavel': resp, 
-                        'cpf': formatar_cpf(cpf_clean), 
+                        'cpf': g_svc.formatar_cpf(cpf_clean), 
                         'id_canal': id_canal_selecionado # Envia o ID, não a string
                     }
                     
                     # Chama Backend Seguro
-                    db.realizar_matricula_completa(
+                    rps.realizar_matricula_completa(
                         unidade_id=unidade_atual,
                         dados_aluno=dados_aluno,
                         lista_disciplinas=st.session_state['disciplinas_temp'],
@@ -196,7 +194,7 @@ with tab1:
 with tab2:
     # 1. Filtro
     termo = st.text_input("🔍 Buscar Aluno", placeholder="Digite o nome...")
-    df_alunos = db.buscar_alunos_por_nome(unidade_atual, termo)
+    df_alunos = rps.buscar_alunos_por_nome(unidade_atual, termo)
     
     if not df_alunos.empty:
         c_list, c_det = st.columns([1, 2])
@@ -207,14 +205,14 @@ with tab2:
         with c_det:
             if sel:
                 # 2. Dados Cadastrais
-                a_data = db.buscar_dados_aluno_completo(sel) 
+                a_data = rps.buscar_dados_aluno_completo(sel) 
                 # a_data indices: 0:id, 1:uid, 2:nome, 3:resp, 4:cpf, 5:canal
                 
-                st.markdown(f"### 👤 {a_data[2]}")
+                st.markdown(f"### 👤 {a_data['nome']}")
                 
                 with st.expander("✏️ Editar Cadastro"):
                     with st.form("edit_aluno"):
-                        id_atual = a_data[5]
+                        id_atual = a_data['id_canal_aquisicao']
                         # Tenta achar o nome correspondente a esse ID
                         nome_atual_canal = next((k for k, v in dict_canais.items() if v == id_atual), None)
 
@@ -232,7 +230,7 @@ with tab2:
                         if st.form_submit_button("Salvar Alterações"):
                             try:
                                 ecanal_id = dict_canais[ecanal_nome]
-                                db.atualizar_dados_aluno(sel, enome, eresp, ecpf, ecanal_id)
+                                rps.atualizar_dados_aluno(sel, enome, eresp, ecpf, ecanal_id)
                                 st.success("Atualizado!")
                                 time.sleep(1); st.rerun()
                             except Exception as e: st.error(e)
@@ -241,32 +239,32 @@ with tab2:
                 
                 # 3. Matrículas (Disciplinas)
                 st.markdown("#### 📚 Matrículas")
-                mats = db.buscar_matriculas_aluno(sel, unidade_atual)
+                mats = rps.buscar_matriculas_aluno(sel, unidade_atual)
                 # indices: 0:id, 1:disc, 2:val, 3:dia, 4:ativo, 5:bolsa_ativa, 6:bolsa_rest
                 
                 for m in mats:
                     mid, disc, val, dia, ativo, b_ativa, b_rest = m
-                    c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1.5, 2, 1])
+                    c1, c2, c3, c4 = st.columns([2, 2.5, 1.5, 1])
                     
                     status_icon = "🟢" if ativo else "🔴"
                     c1.markdown(f"{status_icon} **{disc}**")
-                    c2.metric("Valor", format_brl(val))
+                    c2.metric("Valor", g_svc.format_brl(db.from_cents(val)))
                     
-                    if b_ativa:
-                        c3.info(f"Bolsa: {b_rest} m")
-                    else:
-                        c3.write("-")
-                        
+                    
                     # Botões de Ação
                     if ativo:
-                        if not b_ativa:
-                            if c4.button("🎓 Bolsa", key=f"btn_bolsa_{mid}"):
-                                popup_bolsa(mid, disc, val)
-                        
-                        if c5.button("Inativar", key=f"in_{mid}"):
-                            db.inativar_matricula(mid)
+                        if b_ativa:
+                            c3.info(f"Bolsa: {b_rest} m")
+                        else:
+                            if c3.button("🎓 Bolsa", key=f"btn_bolsa_{mid}"):
+                                    popup_bolsa(mid, disc, val)
+
+                        if c4.button("Inativar", key=f"in_{mid}"):
+                            rps.inativar_matricula(mid)
                             st.rerun()
+
                     else:
+                        c3.caption("-") # Preciso ajustar para não permitir a bolsa qnd inativo
                         c4.caption("Inativo")
                     
                     st.markdown("<hr style='margin:5px 0; opacity:0.1'>", unsafe_allow_html=True)
@@ -283,7 +281,7 @@ with tab2:
                             try:
                                 ndisc_id = dict_disc[ndisc_nome]
 
-                                db.adicionar_nova_matricula_aluno_existente(
+                                rps.adicionar_nova_matricula_aluno_existente(
                                     unidade_id=unidade_atual, 
                                     aluno_id=sel, 
                                     id_disciplina=ndisc_id, # Passa ID
@@ -299,19 +297,41 @@ with tab2:
                 if any(m[4] for m in mats): # Se tem alguma ativa
                     st.markdown("---")
                     if st.button("🛑 INATIVAR ALUNO (TODAS AS MATRÍCULAS)", type="primary"):
-                        db.inativar_aluno_completo(sel)
+                        rps.inativar_aluno_completo(sel)
                         show_success("Aluno inativado.")
 
                 st.divider()
                 
                 # 4. Histórico Financeiro
                 st.markdown("#### 📜 Histórico Financeiro")
-                df_hist = db.buscar_historico_financeiro_aluno(sel, unidade_atual)
+                df_hist = rps.buscar_historico_financeiro_aluno(sel, unidade_atual)
+               
+               
                 if not df_hist.empty:
-                    df_hist['valor_pago'] = df_hist['valor_pago'].apply(format_brl)
-                    st.dataframe(df_hist, width='stretch', hide_index=True)
+                    d1,d2,d3,d4 = st.columns([1, 1, 1, 1])
+                    d1.markdown("**Mês Referência**")
+                    d2.markdown("**Valor**")
+                    d3.markdown("**Status**")
+                    d4.markdown("**Tipo**")
+
+                    for i, r in df_hist.iterrows():
+                        c1,c2,c3,c4 = st.columns([1, 1, 1, 1])
+                        
+                        # Mês/ano
+                        c1.markdown(r['mes_referencia'])
+                        
+                        # Valor pago
+                        valor_reais = db.from_cents(r['valor_pago'])
+                        c2.text(g_svc.format_brl(valor_reais))
+
+                        # Status
+                        c3.text(f"{r['status']}")
+                        
+                        c4.text(f"{r['tipo']}")
+                         
+                        st.markdown("<hr style='margin:0; opacity:0.1'>", unsafe_allow_html=True)
                 else:
-                    st.info("Sem pagamentos registrados.")
+                    st.info("Nada pendente para receber.")
 
                 st.divider()
 
@@ -319,11 +339,11 @@ with tab2:
                 st.markdown("#### 📄 Contrato")
                 if HAS_DOCXTPL:
                     if st.button("Gerar Contrato (Word)"):
-                        blob = db.buscar_binario_contrato(unidade_atual)
+                        blob = rps.buscar_binario_contrato(unidade_atual)
                         if blob:
                             try:
                                 # Busca dados combinados no Backend
-                                dados_doc = db.buscar_dados_para_doc_word(sel, unidade_atual)
+                                dados_doc = rps.buscar_dados_para_doc_word(sel, unidade_atual)
                                 aluno_info = dados_doc['aluno'] # (nome, resp, cpf)
                                 mat_info = dados_doc['matricula'] # (val, dia)
                                 taxa_info = dados_doc['taxa']
@@ -332,9 +352,9 @@ with tab2:
                                     'NOME_ALUNO': aluno_info[0],
                                     'RESPONSAVEL': aluno_info[1],
                                     'CPF_RESPONSAVEL': aluno_info[2],
-                                    'VALOR_MENSALIDADE': format_brl(mat_info[0]) if mat_info else "R$ 0,00",
+                                    'VALOR_MENSALIDADE': g_svc.format_brl(mat_info[0]) if mat_info else "R$ 0,00",
                                     'DIA_VENCIMENTO': str(mat_info[1]) if mat_info else "10",
-                                    'TAXA_MATRICULA': format_brl(taxa_info),
+                                    'TAXA_MATRICULA': g_svc.format_brl(taxa_info),
                                     'DATA_INICIO': date.today().strftime("%d/%m/%Y"),
                                     'DATA_FIM': (date.today() + timedelta(days=365)).strftime("%d/%m/%Y")
                                 }

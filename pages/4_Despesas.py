@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import despesas_rps as rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -36,7 +50,7 @@ def show_success(msg):
         st.rerun()
 
 # Carrega Categorias (Backend)
-categorias = db.buscar_categorias_despesas()
+categorias = rps.buscar_categorias_despesas()
 tab1, tab2 = st.tabs(["➕ Nova Despesa", "🔄 Gerenciar Recorrências (Fixas)"])
 
 # ==============================================================================
@@ -54,7 +68,7 @@ with tab1:
             desc = c1.text_input("Descrição (Ex: Manutenção Ar Condicionado)")
             
             # Busca categorias do backend (já arrumamos essa função antes)
-            categorias = db.buscar_categorias_despesas()
+            categorias = rps.buscar_categorias_despesas()
 
             map_categorias = {
                 c["id"]: c["nome_categoria"]
@@ -87,7 +101,7 @@ with tab1:
                     try:
                         if tipo_lancamento == "Recorrente (Todo Mês)":
                             # Chama função complexa do backend
-                            db.adicionar_despesa_recorrente(
+                            rps.adicionar_despesa_recorrente(
                                 unidade_id=unidade_atual,
                                 categoria=categoria_id,
                                 descricao=desc,
@@ -97,7 +111,7 @@ with tab1:
                             st.success("Despesa Fixa criada! A primeira conta já está no Financeiro.")
                         else:
                             # Chama função simples do backend
-                            db.adicionar_despesa_avulsa(
+                            rps.adicionar_despesa_avulsa(
                                 unidade_id=unidade_atual,
                                 categoria=categoria_id,
                                 descricao=desc,
@@ -122,7 +136,7 @@ with tab2:
     filtro_ativo = st.checkbox("Mostrar apenas regras ativas?", value=True)
     
     # 1. Busca Lista (Backend)
-    df = db.buscar_recorrencias(unidade_atual, filtro_ativo)
+    df = rps.buscar_recorrencias(unidade_atual, filtro_ativo)
     
     if not df.empty:
         col_list, col_edit = st.columns([1, 2])
@@ -150,7 +164,7 @@ with tab2:
                 # 2. Busca Detalhes (Backend)
                 # O retorno é uma tupla. Índices dependem da ordem no banco (Select *)
                 # Assumindo ordem: 0:id, 1:uid, 2:cat, 3:desc, 4:val, 5:dia, ... 8:ativo
-                r_data = db.buscar_detalhe_recorrencia(rec_id_sel)
+                r_data = rps.buscar_detalhe_recorrencia(rec_id_sel)
                 
                 if r_data:
                     st.markdown(f"### ✏️ Editando: {r_data[3]}")
@@ -159,7 +173,7 @@ with tab2:
                         ec1, ec2 = st.columns(2)
                         
                         # Carrega lista de categorias (se já tiver a função que criamos antes)
-                        lista_cats = db.buscar_categorias_despesas() 
+                        lista_cats = rps.buscar_categorias_despesas() 
                         idx_cat = lista_cats.index(r_data[2]) if r_data[2] in lista_cats else 0
 
                         map_categorias = {
@@ -186,7 +200,7 @@ with tab2:
                         if st.form_submit_button("Atualizar Regra"):
                             try:
                                 # 3. Atualização Complexa (Backend)
-                                db.atualizar_recorrencia_completa(
+                                rps.atualizar_recorrencia_completa(
                                     id_rec=rec_id_sel,
                                     categoria=categoria_id,
                                     descricao=n_desc,
@@ -207,7 +221,7 @@ with tab2:
                     if is_ativo_bd:
                         if st.button("🗑️ Encerrar Recorrência (Parar de gerar)", type="primary"):
                             try:
-                                db.encerrar_recorrencia(rec_id_sel)
+                                rps.encerrar_recorrencia(rec_id_sel)
                                 st.success("Recorrência encerrada.")
                                 time.sleep(0.5)
                                 st.rerun()

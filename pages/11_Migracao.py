@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import migracao_rps as rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -13,7 +27,7 @@ unidade_atual = st.session_state.get('unidade_ativa')
 if not unidade_atual: st.error("Erro Unidade"); st.stop()
 
 # --- TRAVA DE SEGURANÇA (BACKEND) ---
-unidade_limpa, n_alunos, n_matriculas = db.verificar_status_migracao(unidade_atual)
+unidade_limpa, n_alunos, n_matriculas = rps.verificar_status_migracao(unidade_atual)
 
 if not unidade_limpa:
     st.error(f"""
@@ -108,7 +122,7 @@ if arquivo:
                             })
                         
                         # EXECUÇÃO (Backend)
-                        db.importar_dados_migracao(unidade_atual, registros_preparados)
+                        rps.importar_dados_migracao(unidade_atual, registros_preparados)
                         
                         st.success("Importação concluída com sucesso!")
                         st.balloons()

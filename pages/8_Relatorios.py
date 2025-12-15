@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import relatorios_rps as rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -149,7 +163,7 @@ if submit:
     dt_fim_mes = date(ano_sel, mes_sel_valor, ultimo_dia)
     
     # 3. Busca Segura (Backend)
-    df = db.buscar_lista_alunos_periodo(unidade_atual, dt_inicio_mes, dt_fim_mes)
+    df = rps.buscar_lista_alunos_periodo(unidade_atual, dt_inicio_mes, dt_fim_mes)
     
     if not df.empty:
         df = df.dropna(subset=['Aluno'])

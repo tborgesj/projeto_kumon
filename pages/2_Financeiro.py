@@ -1,3 +1,18 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import financeiro_rps as rps
+from repositories import robo_financeiro_rps as robo_rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -21,7 +36,8 @@ opcoes_formas = list(dict_formas.keys())
 # --- ROBÔ AUTOMÁTICO (Executa ao abrir a tela) ---
 try:
     # Chama a função blindada do banco silenciosamente
-    c_desp, c_rec, c_rh = db.executar_robo_financeiro(unidade_atual)
+    c_desp, c_rec, c_rh = robo_rps.executar_robo_financeiro(unidade_atual)
+
     
     total_gerado = c_desp + c_rec + c_rh
     
@@ -56,7 +72,7 @@ def get_visual_status(dt_str):
 
 def get_meses_disponiveis(uid):
     # 1. Busca o histórico real do banco (backend)
-    lista = db.buscar_meses_com_movimento(uid)
+    lista = rps.buscar_meses_com_movimento(uid)
     
     # 2. Lógica de Apresentação (Frontend)
     # Garante que o mês atual e o próximo apareçam na lista, mesmo sem dados
@@ -94,7 +110,7 @@ def popup_receber(id_pagamento, valor_bruto, nome_aluno):
                 unidade = st.session_state.get('unidade_ativa')
                 
                 # Chama a função blindada do backend
-                db.registrar_recebimento(
+                rps.registrar_recebimento(
                     unidade_id=unidade,
                     pagamento_id=id_pagamento,
                     id_forma=id_forma_selecionada,
@@ -119,7 +135,7 @@ def popup_estorno(id_item, tipo_item, descricao):
     if col_sim.button("✅ Sim, Estornar", type="primary"):
         try:
             # Chama a função blindada do backend
-            db.estornar_operacao(id_item, tipo_item)
+            rps.estornar_operacao(id_item, tipo_item)
             
             st.toast("Operação estornada com sucesso!")
             time.sleep(0.5) # Pausa rápida para ler o toast
@@ -144,10 +160,15 @@ with tab_in:
     filtro_in = c1.selectbox("Mês (Entradas)", ["Todos"]+lista_meses, index=1)
     
     # 1. Busca Segura (Sem SQL na tela)
-    df = db.buscar_recebimentos_pendentes(unidade_atual, filtro_in)
+    df = rps.buscar_recebimentos_pendentes(unidade_atual, filtro_in)
     
     if not df.empty:
-        st.markdown("**Vencimento | Aluno | Valor | Ação**")
+        d1,d2,d3,d4 = st.columns([1.5, 4, 1.5, 1.5])
+        d1.markdown("**Vencimento**")
+        d2.markdown("**Aluno**")
+        d3.markdown("**Valor**")
+        d4.markdown("**Ação**")
+        # st.markdown("**Vencimento | Aluno | Valor | Ação**")
         for i, r in df.iterrows():
             c1,c2,c3,c4 = st.columns([1.5, 4, 1.5, 1.5])
             
@@ -174,7 +195,7 @@ with tab_out:
     filtro_out = c1.selectbox("Mês (Saídas)", ["Todos"] + lista_meses, index=1)
     
     # 1. Busca os dados usando a função nova
-    df = db.buscar_despesas_pendentes(unidade_atual, filtro_out)
+    df = rps.buscar_despesas_pendentes(unidade_atual, filtro_out)
     
     if not df.empty:
         st.markdown("**Vencimento | Descrição | Valor | Ação**")
@@ -190,7 +211,7 @@ with tab_out:
             # 2. Lógica do Botão Segura
             if c4.button("Pagar", key=f"p_{r['id']}"):
                 try:
-                    db.pagar_despesa(r['id'])
+                    rps.pagar_despesa(r['id'])
                     st.toast("Conta paga com sucesso!")
                     time.sleep(0.5)
                     st.rerun()
@@ -208,7 +229,7 @@ with tab_fluxo:
     f_fluxo = c1.selectbox("Mês (Fluxo)", lista_meses, index=0)
     
     # 1. Busca os dados prontos do Backend
-    geral = db.buscar_fluxo_caixa(unidade_atual, f_fluxo)
+    geral = rps.buscar_fluxo_caixa(unidade_atual, f_fluxo)
     
     if not geral.empty:
         # Cabeçalho da Tabela

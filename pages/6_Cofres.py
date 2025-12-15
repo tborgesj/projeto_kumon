@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import cofres_rps as rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -60,7 +74,7 @@ def popup_distribuir(lucro_disponivel, df_cofres):
         if st.form_submit_button("✅ Confirmar Distribuição"):
             try:
                 # Chama a função de lote do backend
-                db.realizar_distribuicao_lucro(st.session_state['unidade_ativa'], input_vals)
+                rps.realizar_distribuicao_lucro(st.session_state['unidade_ativa'], input_vals)
                 
                 st.success("Lucro guardado nos cofres com sucesso!")
                 time.sleep(1)
@@ -88,7 +102,7 @@ def popup_saque(cofre_id, nome_cofre, saldo_atual):
                     unidade_atual = st.session_state.get('unidade_ativa')
                     
                     # Chama a função segura do backend
-                    db.realizar_saque_cofre(unidade_atual, cofre_id, valor, motivo)
+                    rps.realizar_saque_cofre(unidade_atual, cofre_id, valor, motivo)
                     
                     st.success("Saque registrado com sucesso!")
                     time.sleep(1)
@@ -99,7 +113,7 @@ def popup_saque(cofre_id, nome_cofre, saldo_atual):
 # --- LÓGICA PRINCIPAL (Separada) ---
 
 # 1. Busca Dados dos Cofres (Backend)
-df_cofres = db.buscar_cofres_com_saldo(unidade_atual)
+df_cofres = rps.buscar_cofres_com_saldo(unidade_atual)
 
 # 2. Calcula Lucro do Mês Anterior (Lógica de Data + Backend)
 hj = datetime.now()
@@ -108,7 +122,7 @@ mes_ant_date = (hj.replace(day=1) - pd.DateOffset(days=1))
 mes_ant_str = mes_ant_date.strftime("%m/%Y")
 
 # Chama a "Fórmula Oficial" do lucro
-lucro_sugerido = db.calcular_lucro_realizado(unidade_atual, mes_ant_str)
+lucro_sugerido = rps.calcular_lucro_realizado(unidade_atual, mes_ant_str)
 
 tab1, tab2, tab3 = st.tabs(["📊 Dashboard & Distribuição", "⚙️ Configurar Regras", "📜 Extrato"])
 
@@ -189,7 +203,7 @@ with tab2:
         if st.form_submit_button("💾 Salvar Novas Regras"):
             try:
                 # Chama a função segura do backend
-                db.atualizar_percentuais_cofres(novos_percs)
+                rps.atualizar_percentuais_cofres(novos_percs)
                 
                 st.success("Regras atualizadas com sucesso!")
                 time.sleep(1)
@@ -205,7 +219,7 @@ with tab3:
     st.subheader("Histórico de Movimentações")
     
     # 1. Busca Segura (Backend)
-    hist = db.buscar_historico_movimentacoes_cofres(unidade_atual)
+    hist = rps.buscar_historico_movimentacoes_cofres(unidade_atual)
     
     if not hist.empty:
         # 2. Formatação Visual (Frontend)

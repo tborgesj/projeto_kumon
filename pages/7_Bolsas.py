@@ -1,3 +1,18 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import bolsas_rps as rps
+from services import geral_svc as g_svc
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -8,34 +23,42 @@ st.set_page_config(page_title="Gestão de Bolsas", layout="wide", page_icon="�
 if not auth.validar_sessao(): auth.tela_login(); st.stop()
 auth.barra_lateral()
 
+# --- SEGURANÇA MULTI-UNIDADE ---
 unidade_atual = st.session_state.get('unidade_ativa')
-if not unidade_atual: st.error("Erro Unidade"); st.stop()
+if not unidade_atual:
+    st.error("Erro de Unidade. Faça login novamente.")
+    st.stop()
 
 st.title(f"🎓 Gestão de Bolsas - {st.session_state.get('unidade_nome')}")
 st.markdown("Acompanhe a vigência dos descontos ativos e o impacto financeiro na unidade.")
 
 # 1. Busca Dados no Backend (Seguro)
-df = db.buscar_bolsas_ativas(unidade_atual)
+df = rps.buscar_bolsas_ativas(unidade_atual)
 
 if not df.empty:
     # --- MÉTRICAS GERAIS ---
     total_bolsas = len(df)
+
+    df['valor_original'] = df['valor_original'].apply(db.from_cents)
     
     # Cálculo do impacto: Soma dos valores originais * 50% (Regra visual)
-    impacto_mensal = df['valor_original'].sum() * 0.5 
+    impacto_mensal = df['valor_original'].sum() * 0.5
     
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Bolsistas", total_bolsas)
     
     # Formatação manual BRL (ou use sua função format_brl se tiver importado)
-    str_impacto = f"R$ {impacto_mensal:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    str_impacto = g_svc.format_brl(impacto_mensal)
     col2.metric("Impacto Mensal (Descontos)", str_impacto, delta="- Receita", delta_color="inverse")
     
     st.divider()
-    
+
     # --- TABELA VISUAL ---
     st.subheader("Prazos de Vigência")
     st.caption("Quando o contador chegar a zero, o desconto será removido automaticamente pelo robô financeiro.")
+
+    for b in df:
+            df['valor_original'] = df['valor_original']*1
     
     st.dataframe(
         df,

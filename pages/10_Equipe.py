@@ -1,8 +1,21 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import equipe_rps as rps
+
 import streamlit as st
-import pandas as pd
-import database as db
 import auth
-from datetime import datetime, date
+import database as db
+from datetime import datetime, date, time
 
 st.set_page_config(page_title="Gestão de Equipe", layout="wide", page_icon="👥")
 if not auth.validar_sessao(): auth.tela_login(); st.stop()
@@ -17,7 +30,7 @@ if not unidade_atual:
 
 st.title(f"👥 Gestão de Funcionários - {nome_unidade}")
 
-lista_tipos = db.buscar_tipos_contratacao()
+lista_tipos = rps.buscar_tipos_contratacao()
 dict_tipos = {t['nome']: t['id'] for t in lista_tipos}
 opcoes_tipos = list(dict_tipos.keys())
 
@@ -103,7 +116,7 @@ with tab1:
                 id_tipo_sel = dict_tipos.get(nome_tipo_sel)
 
                 # Chama função transacional do Backend
-                db.cadastrar_funcionario_completo(
+                rps.cadastrar_funcionario_completo(
                     unidade_id=unidade_atual,
                     nome=nome,
                     id_tipo=id_tipo_sel,
@@ -125,7 +138,7 @@ with tab2:
     filtro_status = cf1.radio("Exibir:", ["Ativos", "Inativos", "Todos"], horizontal=True)
     
     # Busca Lista (Backend)
-    df = db.buscar_funcionarios(unidade_atual, filtro_status)
+    df = rps.buscar_funcionarios(unidade_atual, filtro_status)
     
     if not df.empty:
         col_esq, col_dir = st.columns([1, 2])
@@ -142,7 +155,7 @@ with tab2:
             st.markdown("### 📝 Edição e Custos")
             if func_id_sel:
                 # Busca Detalhes (Backend)
-                f_data = db.buscar_detalhe_funcionario(func_id_sel)
+                f_data = rps.buscar_detalhe_funcionario(func_id_sel)
                 # indices: 0:id, 1:uid, 2:nome, 3:tipo, 4:salario, 5:dt, 6:dia, 7:ativo, 8:demissao
                 
                 # --- BLOCO 1: DADOS BÁSICOS E SALÁRIO ---
@@ -157,7 +170,7 @@ with tab2:
                     n_tipo_nome = ce2.selectbox("Contrato", options=opcoes_tipos, index=idx_tipo)
 
                     ce3, ce4 = st.columns(2)
-                    n_sal = ce3.number_input("Salário (R$)", value=float(f_data[4]), step=100.0)
+                    n_sal = ce3.number_input("Salário (R$)", value=float(db.from_cents(f_data['salario_base'])), step=100.0)
                     n_dia = ce4.number_input("Dia Pagamento", value=int(f_data[6]), min_value=1, max_value=31)
                     
                     is_ativo = f_data[7] == 1
@@ -177,7 +190,7 @@ with tab2:
                             dem_str = dt_demissao if not novo_status else None
                             
                             # Chama função inteligente do Backend (com propagação)
-                            db.atualizar_funcionario_completo(
+                            rps.atualizar_funcionario_completo(
                                 func_id=func_id_sel,
                                 nome_novo=n_nome,
                                 id_tipo=n_tipo_id,
@@ -196,11 +209,12 @@ with tab2:
                 st.markdown("#### 💲 Custos Adicionais (Benefícios/Impostos)")
                 
                 # --- BLOCO 2: LISTA DE CUSTOS (Backend) ---
-                custos = db.buscar_custos_funcionario(func_id_sel)
+                custos = rps.buscar_custos_funcionario(func_id_sel)
                 
                 if custos:
                     for c in custos:
                         cid, ctipo, cnome, cval, cdia = c
+                        cval = db.from_cents(cval)
                         cc1, cc2, cc3, cc4 = st.columns([3, 2, 2, 1])
                         cc1.text(f"{cnome} ({ctipo})")
                         cc2.text(format_brl(cval))
@@ -209,7 +223,7 @@ with tab2:
                         if cc4.button("🗑️", key=f"del_cost_{cid}"):
                             try:
                                 # Chama função segura do Backend
-                                db.excluir_custo_pessoal(
+                                rps.excluir_custo_pessoal(
                                     custo_id=cid,
                                     nome_item=cnome,
                                     nome_funcionario=f_data[2],
@@ -241,7 +255,7 @@ with tab2:
                                     tipo_bd = "BENEFICIO" if ntipo == "Benefício" else "IMPOSTO"
                                     
                                     # Chama função do Backend (que já gera a despesa do mês)
-                                    db.adicionar_custo_extra_funcionario(
+                                    rps.adicionar_custo_extra_funcionario(
                                         unidade_id=unidade_atual,
                                         func_id=func_id_sel,
                                         tipo_item=tipo_bd,

@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from repositories import admin_usuarios_rps as rps
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -57,10 +71,10 @@ with tab1:
             else:
                 try:
                     # Gera Hash da Senha
-                    p_hash = db._gerar_hash_bcrypt(new_pass)
+                    p_hash = rps._gerar_hash_bcrypt(new_pass)
                     
                     # Chama função transacional do Backend
-                    db.criar_usuario_completo(
+                    rps.criar_usuario_completo(
                         username=new_user, 
                         password_hash=p_hash, 
                         nome=new_nome, 
@@ -122,11 +136,11 @@ with tab2:
                     else:
                         try:
                             # Prepara hash apenas se houve troca de senha
-                            nhash = db._gerar_hash_bcrypt(enova_senha.encode()) if enova_senha else None
+                            nhash = rps._gerar_hash_bcrypt(enova_senha.encode()) if enova_senha else None
                             # nhash = hashlib.sha256(enova_senha.encode()).hexdigest() if enova_senha else None
                             
                             # Chama função transacional do Backend
-                            db.atualizar_usuario_completo(
+                            rps.atualizar_usuario_completo(
                                 username=sel_user,
                                 nome=enome,
                                 is_admin=eadmin,
