@@ -255,7 +255,7 @@ def buscar_historico_financeiro_aluno(aluno_id, unidade_id):
     conn = conectar()
     try:
         query = """
-            SELECT p.mes_referencia, p.valor_pago, s.nome as status, t.nome as tipo 
+            SELECT p.mes_referencia, data_vencimento, p.valor_pago, s.nome as status, t.nome as tipo 
              FROM pagamentos p
              JOIN status_pagamentos s ON p.id_status = s.id
              JOIN tipos_pagamento t ON p.id_tipo = t.id

@@ -1,3 +1,17 @@
+import sys
+import os
+
+# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
+diretorio_raiz = os.path.dirname(diretorio_atual)
+
+# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
+sys.path.append(diretorio_raiz)
+
+from services import geral_svc as g_svc
+
 import streamlit as st
 import pandas as pd
 import database as db
@@ -28,30 +42,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- FUNÇÕES AUXILIARES VISUAIS ---
-def format_brl(val):
-    if pd.isnull(val): return "R$ 0,00"
-    return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-def get_status_visual(data_vencimento):
-    try:
-        if isinstance(data_vencimento, str):
-            dt_venc = datetime.strptime(data_vencimento, '%Y-%m-%d').date()
-        elif isinstance(data_vencimento, datetime):
-            dt_venc = data_vencimento.date()
-        else:
-            dt_venc = data_vencimento
-            
-        hoje = date.today()
-        dt_fmt = dt_venc.strftime('%d/%m')
-        
-        if dt_venc < hoje:
-            return f"🚨 :red[**{dt_fmt}**]" # Atrasado
-        elif dt_venc == hoje:
-            return f"⚠️ :orange[**{dt_fmt}**]" # Vence hoje
-        else:
-            return dt_fmt # No prazo
-    except Exception:
-        return "-"
 
 # --- INTERFACE PRINCIPAL ---
 
@@ -68,11 +58,11 @@ if dados:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Alunos Ativos", dados['alunos_ativos'], delta="Base Atual")
     c2.metric("Alunos Ausentes", dados['alunos_ausentes'], delta="Base Atual")
-    c3.metric("Receita (Mês)", format_brl(dados['rec_total']), delta="Entradas Previstas")
-    c4.metric("Despesa (Mês)", format_brl(dados['desp_total']), delta="Saídas Previstas", delta_color="inverse")
+    c3.metric("Receita (Mês)", g_svc.format_brl(dados['rec_total']), delta="Entradas Previstas")
+    c4.metric("Despesa (Mês)", g_svc.format_brl(dados['desp_total']), delta="Saídas Previstas", delta_color="inverse")
     
     cor_saldo = "normal" if dados['saldo_previsto'] >= 0 else "inverse"
-    c5.metric("Resultado (Previsto)", format_brl(dados['saldo_previsto']), delta="Lucro/Prejuízo", delta_color=cor_saldo)
+    c5.metric("Resultado (Previsto)", g_svc.format_brl(dados['saldo_previsto']), delta="Lucro/Prejuízo", delta_color=cor_saldo)
 
 # Listas de Pendências
 st.markdown("### 📅 Próximos Vencimentos (Ainda não pagos)")
@@ -80,7 +70,7 @@ col_l, col_r = st.columns(2)
 
 # --- COLUNA ESQUERDA: A RECEBER ---
 with col_l:
-    st.markdown(f"**A Receber (Alunos): {format_brl(dados.get('rec_pendente', 0))}**")
+    st.markdown(f"**A Receber (Alunos): {g_svc.format_brl(dados.get('rec_pendente', 0))}**")
     st.divider()
     
     # Busca Lista no Backend
@@ -93,18 +83,18 @@ with col_l:
         h3.caption("Valor")
         
         for _, row in df_rec.iterrows():
-            visual_date = get_status_visual(row['data_vencimento'])
+            visual_date = g_svc.get_status_visual(row['data_vencimento'])
             r1, r2, r3 = st.columns([1.5, 3, 2])
             r1.markdown(visual_date)
             r2.write(row['nome'])
-            r3.write(format_brl(db.from_cents(row['valor_pago'])))
+            r3.write(g_svc.format_brl(db.from_cents(row['valor_pago'])))
             st.markdown("<hr>", unsafe_allow_html=True)
     else:
         st.success("Tudo recebido neste mês!")
 
 # --- COLUNA DIREITA: A PAGAR ---
 with col_r:
-    st.markdown(f"**A Pagar (Despesas): {format_brl(dados.get('desp_pendente', 0))}**")
+    st.markdown(f"**A Pagar (Despesas): {g_svc.format_brl(dados.get('desp_pendente', 0))}**")
     st.divider()
     
     # Busca Lista no Backend
@@ -117,11 +107,11 @@ with col_r:
         h3.caption("Valor")
         
         for _, row in df_pag.iterrows():
-            visual_date = get_status_visual(row['data_vencimento'])
+            visual_date = g_svc.get_status_visual(row['data_vencimento'])
             r1, r2, r3 = st.columns([1.5, 3, 2])
             r1.markdown(visual_date)
             r2.write(row['descricao'])
-            r3.write(format_brl(db.from_cents(row['valor'])))
+            r3.write(g_svc.format_brl(db.from_cents(row['valor'])))
             st.markdown("<hr>", unsafe_allow_html=True)
     else:
         st.success("Tudo pago neste mês!")

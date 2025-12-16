@@ -135,6 +135,13 @@ with tab1:
             })
         st.rerun()
 
+    # Inicializa um contador. Toda vez que ele mudar, o formulário reseta.
+    if "aluno_form_id" not in st.session_state:
+        st.session_state["aluno_form_id"] = 0
+
+    # Pegamos o ID atual para usar nas chaves
+    form_id = st.session_state["aluno_form_id"]  
+
     if st.session_state['disciplinas_temp']:
         for i, item in enumerate(st.session_state['disciplinas_temp']):
             cc1, cc2, cc3, cc4 = st.columns([2, 2, 3, 1])
@@ -151,21 +158,23 @@ with tab1:
     st.divider()
 
     # 2. Formulário Principal
-    with st.form("form_matricula", clear_on_submit=False):
+    with st.form(key=f"form_matricula{form_id}"):
+    # with st.form("form_matricula", clear_on_submit=False):
         col_n, col_r = st.columns(2)
-        nome = col_n.text_input("Nome do Aluno")
-        resp = col_r.text_input("Nome do Responsável")
+        # new_user = c1.text_input("Username (Login)", key=f"u_login_{form_id}")
+        nome = col_n.text_input("Nome do Aluno", key=f"u_nome_aluno_{form_id}")
+        resp = col_r.text_input("Nome do Responsável", key=f"u_nome_resp_{form_id}")
         
         col_c, col_m = st.columns(2)
-        cpf_input = col_c.text_input("CPF Responsável", placeholder="Apenas números ou com pontos", max_chars=14)
+        cpf_input = col_c.text_input("CPF Responsável", placeholder="Apenas números ou com pontos", key=f"u_cpf_{form_id}", max_chars=14)
         # canal = col_m.selectbox("Canal", ["Indicação", "Google", "Instagram", "Passante", "Outro"])
-        nome_canal_selecionado = col_m.selectbox("Canal", opcoes_canais)
+        nome_canal_selecionado = col_m.selectbox("Canal", opcoes_canais, key=f"u_canal_{form_id}")
         
         col_v, col_d, col_t = st.columns([1, 1, 1])
-        dia_venc = col_v.number_input("Dia de Vencimento", 1, 31, 10)
+        dia_venc = col_v.number_input("Dia de Vencimento", 1, 31, 10, key=f"u_venc_{form_id}")
 
         # NOVO CAMPO: Data de Inclusão/Matrícula
-        dt_matricula = col_d.date_input("Data da Matrícula", value=date.today())
+        dt_matricula = col_d.date_input("Data da Matrícula", value=date.today(), key=f"u_data_{form_id}")
         
         # Taxa de Matrícula (Lógica Visual)
         v_taxa = 0.0
@@ -173,7 +182,7 @@ with tab1:
             col_t.warning("Campanha: Taxa Isenta")
         else: 
             v_padrao_taxa = float(params['taxa_matr']) if params else 0.0
-            v_taxa = col_t.number_input("Taxa Matrícula", value=v_padrao_taxa)
+            v_taxa = col_t.number_input("Taxa Matrícula", value=v_padrao_taxa, key=f"u_taxa_{form_id}")
         
         submitted = st.form_submit_button("✅ Finalizar Matrícula")
         
@@ -209,7 +218,18 @@ with tab1:
                     )
                     
                     st.session_state['disciplinas_temp'] = []
+
+                    # --- O PULO DO GATO (RESET) ---
+                    # Apenas incrementamos o contador.
+                    # Na próxima vez que o script rodar, todas as keys terão o número novo (ex: _1)
+                    # e o Streamlit criará inputs novinhos e vazios.
+
                     show_success(f"Aluno {nome} cadastrado com sucesso!")
+                    
+                    st.session_state["aluno_form_id"] += 1
+                    
+                    time.sleep(1.5) # Tempo para ler a mensagem
+                    st.rerun()      # Recarrega a página para desenhar o formulário novo
                     
                 except Exception as e:
                     st.error(f"Erro ao matricular: {e}")
@@ -392,9 +412,10 @@ with tab2:
             if not df_hist.empty:
                 # Tratamento visual do dataframe financeiro
                 df_hist['Valor'] = df_hist['valor_pago'].apply(lambda x: g_svc.format_brl(db.from_cents(x)))
+                df_hist['Vencimento'] = df_hist['data_vencimento'].apply(lambda x:g_svc.formata_data(x))
                 
                 st.dataframe(
-                    df_hist[['mes_referencia', 'Valor', 'status', 'tipo']],
+                    df_hist[['mes_referencia', 'Vencimento', 'Valor', 'status', 'tipo']],
                     column_config={
                         "mes_referencia": "Mês Ref",
                         "status": st.column_config.Column("Status"),
