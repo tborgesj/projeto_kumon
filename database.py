@@ -15,6 +15,8 @@ from calendar import monthrange
 from typing import Dict, Tuple, List, Any, Optional
 import pandas as pd
 
+from conectDB import conexao as cnc
+
 # --- Logging ---
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -34,20 +36,6 @@ def adapt_datetime(val: datetime) -> str:
 
 sqlite3.register_adapter(date, adapt_date)
 sqlite3.register_adapter(datetime, adapt_datetime)
-
-
-# --- 2. CONEXÃO ---
-DB_PATH = 'kumon.db'
-_DEFAULT_TIMEOUT = 10
-
-def conectar() -> sqlite3.Connection:
-    """Retorna uma nova conexão SQLite configurada com segurança para uso em app web (check_same_thread=False).
-    A função preserva a API original (retorna sqlite3.Connection).
-    """
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=_DEFAULT_TIMEOUT)
-    # Usar row factory facilita leitura por nome em alguns pontos
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 # --- Helpers internos ---
@@ -96,7 +84,7 @@ def verificar_credenciais(usuario: str, senha_digitada: str) -> Tuple[bool, Opti
     """Verifica credenciais. Compatível com hashes existentes.
     Retorna (ok, nome_completo, is_admin).
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         
         row = conn.execute("SELECT nome_completo, admin, password_hash FROM usuarios WHERE username = ? AND ativo=1", (usuario,)).fetchone()
@@ -125,7 +113,7 @@ def verificar_credenciais(usuario: str, senha_digitada: str) -> Tuple[bool, Opti
 
 
 def get_unidades_usuario(usuario: str) -> List[Tuple[int, str]]:
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         rows = conn.execute(
             'SELECT u.id AS id, u.nome AS nome FROM unidades u JOIN usuario_unidades uu ON u.id = uu.unidade_id WHERE uu.usuario_username = ? ORDER BY u.id',
@@ -141,7 +129,7 @@ def get_parametros_unidade(unidade_id):
     Busca as configurações globais da unidade (mensalidade padrão, taxa, campanha).
     Retorna um dicionário.
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         row = conn.execute("SELECT valor_mensalidade_padrao, valor_taxa_matricula, em_campanha_matricula FROM parametros WHERE unidade_id=?", (unidade_id,)).fetchone()
         if row:
@@ -155,25 +143,11 @@ def get_parametros_unidade(unidade_id):
         conn.close()
 
 
-
-
-def atualizar_aluno(aluno_id: int, nome: str, responsavel: str, cpf: str, canal: str) -> None:
-    conn = conectar()
-    try:
-        with conn:
-            conn.execute("""
-                UPDATE alunos 
-                SET nome=?, responsavel_nome=?, cpf_responsavel=?, canal_aquisicao=? 
-                WHERE id=?
-            """, (nome, responsavel, cpf, canal, aluno_id))
-    finally:
-        conn.close()
-
 def buscar_todas_unidades():
     """
     Retorna lista de tuplas (id, nome) de todas as unidades cadastradas.
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         return conn.execute("SELECT id, nome FROM unidades ORDER BY nome").fetchall()
     finally:
@@ -183,7 +157,7 @@ def buscar_lista_usuarios():
     """
     Retorna DataFrame com dados básicos dos usuários para listagem.
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         return pd.read_sql("SELECT username, nome_completo, admin, ativo FROM usuarios ORDER BY nome_completo", conn)
     finally:
@@ -193,7 +167,7 @@ def buscar_ids_unidades_usuario(username):
     """
     Retorna uma lista de IDs das unidades que o usuário tem acesso.
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         res = conn.execute("SELECT unidade_id FROM usuario_unidades WHERE usuario_username=?", (username,)).fetchall()
         return [r[0] for r in res]
@@ -205,7 +179,7 @@ def buscar_resumo_operacional_mes(unidade_id):
     Calcula os totais financeiros (Receitas/Despesas) e contagem de alunos
     para alimentar os Cards da Home.
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         hoje = datetime.now()
         mes_ref = hoje.strftime("%m/%Y")     # Para pagamentos/despesas
@@ -251,7 +225,7 @@ def buscar_pendencias_recebimento(unidade_id, mes_ref):
     """
     Lista os alunos que ainda não pagaram no mês atual.
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         query = '''
             SELECT a.nome, p.data_vencimento, p.valor_pago
@@ -267,7 +241,7 @@ def buscar_pendencias_pagamento(unidade_id, mes_ref):
     """
     Lista as contas (despesas) que vencem no mês atual e ainda não foram pagas.
     """
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         query = '''
             SELECT descricao, data_vencimento, valor
@@ -280,7 +254,7 @@ def buscar_pendencias_pagamento(unidade_id, mes_ref):
         conn.close()
 
 def buscar_canais_aquisicao() -> List[dict]:
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         # Retorna lista de dicts com 'id' e 'nome'
         df = pd.read_sql_query("SELECT id, nome FROM canais_aquisicao ORDER BY nome", conn)
@@ -289,7 +263,7 @@ def buscar_canais_aquisicao() -> List[dict]:
         conn.close()
 
 def buscar_disciplinas() -> List[dict]:
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         df = pd.read_sql_query("SELECT id, nome FROM disciplinas ORDER BY nome", conn)
         return df.to_dict(orient="records")
@@ -297,7 +271,7 @@ def buscar_disciplinas() -> List[dict]:
         conn.close()
 
 def buscar_formas_pagamento() -> List[dict]:
-    conn = conectar()
+    conn = cnc.conectar()
     try:
         df = pd.read_sql("SELECT id, nome FROM formas_pagamento ORDER BY nome", conn)
         return df.to_dict(orient="records")

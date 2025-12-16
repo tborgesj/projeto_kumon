@@ -1,15 +1,3 @@
-import sys
-import os
-
-# 1. Pega o caminho absoluto de onde o arquivo '1_Aluno.py' está
-diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-
-# 2. Sobe um nível para chegar na raiz do projeto (o pai do diretorio_atual)
-diretorio_raiz = os.path.dirname(diretorio_atual)
-
-# 3. Adiciona a raiz à lista de lugares onde o Python procura arquivos
-sys.path.append(diretorio_raiz)
-
 from repositories import bolsas_rps as rps
 from services import geral_svc as g_svc
 

@@ -38,8 +38,6 @@ def format_brl(val): return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",")
 anos_disponiveis = [str(datetime.now().year), str(datetime.now().year - 1)]
 ano_sel = st.selectbox("Selecione o Ano de Análise:", anos_disponiveis)
 
-conn = db.conectar()
-
 # --- CARREGAMENTO DE DADOS FINANCEIROS ---
 
 # A. Dados Financeiros por Mês (Para Gráficos)
