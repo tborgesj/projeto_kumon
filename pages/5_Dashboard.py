@@ -76,6 +76,13 @@ if meses_faturados == 0:
     meses_faturados = 1
 
 # --- CÁLCULO DE KPIS GERAIS ---
+
+# 1. Busca contagem de alunos únicos (PESSOAS)
+total_alunos_unicos = rps.contar_alunos_unicos_ativos(unidade_atual)
+
+# 2. Busca total de matrículas (DISCIPLINAS)
+total_matriculas_ativas = df_mat['qtd'].sum() if not df_mat.empty else 0
+
 receita_ano = db.from_cents(df_fin[df_fin['tipo']=='Receita']['total'].sum())
 despesa_ano = db.from_cents(df_fin[df_fin['tipo']=='Despesa']['total'].sum())
 lucro_ano = receita_ano - despesa_ano
@@ -83,7 +90,13 @@ lucro_ano = receita_ano - despesa_ano
 # TICKET MÉDIO CORRIGIDO
 # Fórmula: (Faturamento Total / Meses com Faturamento) / Alunos Ativos Hoje
 media_faturamento_mensal = receita_ano / meses_faturados
-ticket_medio = media_faturamento_mensal / total_alunos_ativos if total_alunos_ativos > 0 else 0
+# ticket_medio = media_faturamento_mensal / total_alunos_ativos if total_alunos_ativos > 0 else 0
+
+# Ticket por Aluno (Quanto cada família paga em média)
+ticket_por_aluno = media_faturamento_mensal / total_alunos_unicos if total_alunos_unicos > 0 else 0
+
+# Ticket por Matrícula (Preço médio da disciplina)
+ticket_por_materia = media_faturamento_mensal / total_matriculas_ativas if total_matriculas_ativas > 0 else 0
 
 # INADIMPLÊNCIA
 taxa_inad = 0
@@ -107,7 +120,12 @@ st.markdown("### 🏦 Saúde Financeira")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Faturamento Anual", format_brl(receita_ano))
 c2.metric("Lucro Líquido", format_brl(lucro_ano), delta_color="normal" if lucro_ano >=0 else "inverse")
-c3.metric("Ticket Médio Real", format_brl(ticket_medio), help=f"Média mensal ({meses_faturados} meses) dividido por alunos ativos.")
+# c3.metric("Ticket Médio Real", format_brl(ticket_medio), help=f"Média mensal ({meses_faturados} meses) dividido por alunos ativos.")
+c3.metric(
+    "Ticket Médio (Aluno)", 
+    format_brl(ticket_por_aluno), 
+    help=f"Média por aluno único. Por matéria: {format_brl(ticket_por_materia)}"
+)   
 c4.metric("Inadimplência", f"{taxa_inad:.1f}%", delta_color="inverse")
 
 st.markdown("---")

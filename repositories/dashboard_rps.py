@@ -107,3 +107,11 @@ def contar_meses_com_faturamento(unidade_id: int, ano: int) -> int:
     finally:
         conn.close()
 
+def contar_alunos_unicos_ativos(unidade_id: int) -> int:
+    conn = conectar()
+    try:
+        # Conta IDs distintos na tabela de matrículas ativas
+        query = "SELECT COUNT(DISTINCT aluno_id) as cnt FROM matriculas WHERE ativo=1 AND unidade_id=?"
+        return int(conn.execute(query, (unidade_id,)).fetchone()['cnt'] or 0)
+    finally:
+        conn.close()
