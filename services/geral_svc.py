@@ -42,3 +42,11 @@ def get_status_visual(data_vencimento):
             return dt_fmt # No prazo
     except Exception:
         return "-"
+
+def safe_text(text):
+    if not text: return ""
+    try:
+        # Tenta converter para latin-1 (padrão do FPDF)
+        return str(text).encode('latin-1', 'replace').decode('latin-1')
+    except:
+        return str(text)

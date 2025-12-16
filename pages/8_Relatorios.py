@@ -1,4 +1,5 @@
 from repositories import relatorios_rps as rps
+from services import geral_svc as g_svc
 
 import streamlit as st
 import pandas as pd
@@ -34,14 +35,16 @@ if not HAS_FPDF:
 class PDFReportR2(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, f'R2 - Controle de Alunos - {st.session_state.get("unidade_nome")}', 0, 1, 'C')
+        # Usa safe_text no título também
+        titulo = g_svc.safe_text(f'R2 - Controle de Alunos - {st.session_state.get("unidade_nome")}')
+        self.cell(0, 10, titulo, 0, 1, 'C')
         self.ln(5)
         self.set_font('Arial', 'B', 9)
         self.set_fill_color(220, 220, 220)
         self.cell(75, 8, 'Aluno', 1, 0, 'L', 1)
         self.cell(30, 8, 'Disciplina', 1, 0, 'L', 1)
-        self.cell(25, 8, 'Estágio', 1, 0, 'C', 1)
-        self.cell(25, 8, 'Lição', 1, 0, 'C', 1)
+        self.cell(25, 8, g_svc.safe_text('Estágio'), 1, 0, 'C', 1) # Acento
+        self.cell(25, 8, g_svc.safe_text('Lição'), 1, 0, 'C', 1)  # Acento
         self.cell(35, 8, 'Blocos', 1, 1, 'C', 1)
 
     def footer(self):
@@ -58,8 +61,11 @@ def gerar_pdf_r2(df):
     for index, row in df.iterrows():
         nome_raw = str(row['Aluno'])
         nome = nome_raw[:35] + '...' if len(nome_raw) > 35 else nome_raw
-        pdf.cell(75, h_line, nome, 1, 0, 'L')
-        pdf.cell(30, h_line, str(row['Disciplina']), 1, 0, 'L')
+        
+        # APLICA A PROTEÇÃO AQUI
+        pdf.cell(75, h_line, g_svc.safe_text(nome), 1, 0, 'L')
+        pdf.cell(30, h_line, g_svc.safe_text(row['Disciplina']), 1, 0, 'L')
+        
         pdf.cell(25, h_line, '', 1, 0, 'C')
         pdf.cell(25, h_line, '', 1, 0, 'C')
         pdf.cell(35, h_line, '', 1, 1, 'C')
