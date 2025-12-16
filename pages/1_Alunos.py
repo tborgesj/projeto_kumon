@@ -301,6 +301,18 @@ with tab2:
         
         # ---------------- ABA CADASTRO ----------------
         with tab_cad:
+
+            # Busca matrículas para descobrir o dia de vencimento atual
+            mats_info = rps.buscar_matriculas_aluno(aluno_id, unidade_atual)
+
+            # Define valor padrão: Se tiver matrícula, pega o dia da primeira. Se não, dia 10.
+            dia_atual_bd = 10
+
+            if mats_info:
+                # O índice 3 da tupla é 'dia_vencimento' conforme sua query em buscar_matriculas_aluno
+                # SELECT m.id, d.nome, m.valor..., m.dia_vencimento (índice 3)
+                dia_atual_bd = mats_info[0][3]
+
             # O formulário só abre agora que temos certeza que a_data existe
             with st.form(f"form_edit_{aluno_id}"):
                 c1, c2 = st.columns(2)
@@ -320,14 +332,26 @@ with tab2:
 
                 enome = c1.text_input("Nome", value=a_data['nome'])
                 eresp = c2.text_input("Responsável", value=a_data['responsavel_nome'])
-                ecpf = c1.text_input("CPF Responsável", value=a_data['cpf_responsavel'])
-                ecanal_nome = c2.selectbox("Canal de Aquisição", opcoes_canais, index=idx_canal)
+
+                # Ajuste de layout para caber o novo campo
+                c3, c4, c5 = st.columns([2, 2, 1])
+                
+                ecpf = c3.text_input("CPF Responsável", value=a_data['cpf_responsavel'])
+                ecanal_nome = c4.selectbox("Canal de Aquisição", opcoes_canais, index=idx_canal)
+                
+                # NOVO CAMPO DE VENCIMENTO
+                edia_venc = c5.number_input("Dia Vencimento", 1, 31, value=dia_atual_bd, help="Altera para próximas cobranças e atuais (se não vencerem no passado)")
                 
                 # Agora o botão será alcançado porque o código não quebrou antes
                 if st.form_submit_button("💾 Salvar Alterações Cadastrais"):
                     try:
+                        # 1. Atualiza Dados Básicos
                         ecanal_id = dict_canais[ecanal_nome]
                         rps.atualizar_dados_aluno(aluno_id, enome, eresp, ecpf, ecanal_id)
+                        # 2. Atualiza Vencimento (Se mudou)
+                        if edia_venc != dia_atual_bd:
+                            rps.atualizar_dia_vencimento_aluno(aluno_id, edia_venc, unidade_atual)
+                            
                         st.success("Cadastro atualizado com sucesso!")
                         time.sleep(1)
                         st.rerun()

@@ -390,3 +390,66 @@ def atualizar_valor_matricula(matricula_id: int, novo_valor: float, unidade_id: 
         raise e
     finally:
         conn.close()
+
+# No arquivo repositories/alunos_rps.py
+
+def atualizar_dia_vencimento_aluno(aluno_id, novo_dia, unidade_id):
+    """
+    Atualiza o dia de vencimento de todas as matrículas ativas E dos boletos em aberto.
+    REGRA DE SEGURANÇA:
+    - Se a alteração fizer o boleto vencer no passado (em relação a hoje),
+      esse boleto específico NÃO é alterado.
+    """
+    conn = conectar()
+    try:
+        hj = date.today()
+        
+        with conn:
+            # 1. Atualiza a configuração padrão nas Matrículas (Para gerações futuras)
+            conn.execute("""
+                UPDATE matriculas 
+                SET dia_vencimento=? 
+                WHERE aluno_id=? AND unidade_id=? AND ativo=1
+            """, (novo_dia, aluno_id, unidade_id))
+            
+            # 2. Busca pagamentos pendentes para tentar atualizar
+            boletos = conn.execute("""
+                SELECT id, mes_referencia, data_vencimento 
+                FROM pagamentos 
+                WHERE aluno_id=? AND unidade_id=? AND id_status=1 AND id_tipo = 1
+            """, (aluno_id, unidade_id)).fetchall()
+            
+            for bol in boletos:
+                bid = bol['id']
+                mes_ref_str = bol['mes_referencia'] # Ex: "05/2025"
+                
+                # Extrai mês e ano da referência
+                try:
+                    partes = mes_ref_str.split('/')
+                    mes = int(partes[0])
+                    ano = int(partes[1])
+                    
+                    # Tenta criar a nova data de vencimento
+                    # Tratamento para dias inválidos (ex: dia 31 em Fevereiro)
+                    try:
+                        nova_data_venc = date(ano, mes, novo_dia)
+                    except ValueError:
+                        # Se der erro, pega o último dia daquele mês
+                        max_day = monthrange(ano, mes)[1]
+                        nova_data_venc = date(ano, mes, max_day)
+                    
+                    # A REGRA DE OURO:
+                    # Só atualizamos se a nova data ainda for no futuro (ou hoje)
+                    if nova_data_venc >= hj:
+                        conn.execute("UPDATE pagamentos SET data_vencimento=? WHERE id=?", (nova_data_venc, bid))
+                    
+                    # Se nova_data_venc < hj, não fazemos nada. 
+                    # O boleto mantém o vencimento original para não gerar juros indevidos retroativos.
+                    
+                except Exception:
+                    continue # Pula caso haja algum erro de formatação na data
+                    
+    except Exception as e:
+        raise e
+    finally:
+        conn.close()
