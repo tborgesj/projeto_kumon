@@ -26,27 +26,27 @@ def registrar_recebimento(unidade_id: int, pagamento_id: int, id_forma: int, tax
     try:
         with conn:
             hoje = date.today()
+            # 1. Atualiza o Pagamento (Entrada)
             conn.execute("""
                 UPDATE pagamentos 
                 SET id_status=2, data_pagamento=?, id_forma_pagamento=? 
                 WHERE id=?
             """, (hoje, id_forma, pagamento_id)) 
-            # FOCANDO NA TABELA DESPESAS (TAXA):
+            
+            # 2. Cria a Despesa de Taxa (Se houver) - AGORA VINCULADA
             if taxa_cents > 0:
                 mes_ref = hoje.strftime("%m/%Y")
-
-                # Busca nome da forma para a descrição da despesa (Cosmético)
+                
+                # Busca nome da forma apenas para a descrição visual
                 nome_forma = conn.execute("SELECT nome FROM formas_pagamento WHERE id=?", (id_forma,)).fetchone()[0]
                 desc_despesa = f"({nome_forma}) - {nome_aluno}"
-
                 ID_CAT_TAXAS = 3 
                 
-                # AQUI A MUDANÇA: id_status = 2 (PAGO)
                 conn.execute("""
                     INSERT INTO despesas 
-                    (unidade_id, id_categoria, descricao, valor, data_vencimento, mes_referencia, data_pagamento, id_status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 2)
-                """, (unidade_id, ID_CAT_TAXAS, desc_despesa, taxa_cents, hoje, mes_ref, hoje))
+                    (unidade_id, id_categoria, descricao, valor, data_vencimento, mes_referencia, data_pagamento, id_status, id_pagamento_origem) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?)
+                """, (unidade_id, ID_CAT_TAXAS, desc_despesa, taxa_cents, hoje, mes_ref, hoje, pagamento_id))
     finally:
         conn.close()
 
@@ -56,12 +56,24 @@ def estornar_operacao(id_item: int, tipo_item: str) -> None:
     try:
         with conn:
             if tipo_item == 'Entrada':
+                # 1. Estorna a Entrada (Pagamento)
                 conn.execute("""
                     UPDATE pagamentos 
                     SET id_status=1, data_pagamento=NULL, id_forma_pagamento=NULL 
                     WHERE id=?
                 """, (id_item,))
+                
+                # 2. Estorna AUTOMATICAMENTE a Taxa vinculada (Despesa)
+                # Procura qualquer despesa que tenha nascido deste pagamento
+                conn.execute("""
+                    DELETE FROM despesas 
+                    WHERE id_pagamento_origem=?
+                """, (id_item,))
+                # Obs: Optei por DELETE porque se estornou a entrada, a taxa "nunca existiu".
+                # Se preferir manter histórico, use UPDATE despesas SET id_status=1...
+
             else:
+                # Lógica para estorno de Despesa manual (sem vínculo de origem)
                 conn.execute("""
                     UPDATE despesas 
                     SET id_status=1, data_pagamento=NULL 

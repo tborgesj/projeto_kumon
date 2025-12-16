@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS despesas (
     data_vencimento DATE,
     mes_referencia TEXT,
     data_pagamento DATE,
-    id_status INTEGER DEFAULT 1, -- Alterado de TEXT para INTEGER (FK)
+    id_status INTEGER DEFAULT 1,
+    id_pagamento_origem INTEGER REFERENCES pagamentos(id),
     FOREIGN KEY (id_categoria) REFERENCES categorias_despesas (id),
     FOREIGN KEY (id_status) REFERENCES status_despesas (id)
 );

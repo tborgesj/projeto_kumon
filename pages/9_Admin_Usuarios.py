@@ -1,9 +1,22 @@
+import streamlit as st
+import auth
+
+# --- VERIFICAÇÃO DE SEGURANÇA ---
+# 1. Garante que está logado
+auth.validar_sessao()
+
+# 2. Garante que é ADMIN
+if not st.session_state.get('usuario_admin'):
+    st.error("⛔ Acesso Negado: Você não tem permissão de administrador.")
+    st.stop()  # <--- ISSO É CRUCIAL: Interrompe o carregamento do resto da página
+# ---------------------------------
+
+# ... Resto do seu código da página ...
+
 from repositories import admin_usuarios_rps as rps
 
-import streamlit as st
 import pandas as pd
 import database as db
-import auth
 import time
 
 st.set_page_config(page_title="Admin Usuários", layout="wide", page_icon="🔐")
@@ -75,8 +88,12 @@ with tab1:
         # 5. LÓGICA DE PROCESSAMENTO (FORA DO FORM)
 if submit_btn:
     # Validações Básicas
-    if not new_user or not new_pass or not selected_units:
-        st.error("Preencha login, senha e selecione pelo menos uma unidade.")
+    if len(new_pass) < 6:
+        st.error("⚠️ A senha é muito fraca. Escolha uma senha com pelo menos 6 caracteres.")
+    # -----------------------------------
+    elif not new_user or not new_pass or not selected_units or not new_nome:
+        st.error("Preencha login, senha, nome e selecione pelo menos uma unidade.")
+    
     else:
         try:
             # Verifica Duplicidade (Sua função ajustada retornando True/False)
