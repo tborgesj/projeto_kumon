@@ -193,11 +193,53 @@ with col_g1:
     else:
         st.info("Sem despesas cadastradas.")
 
+# with col_g2:
+#     st.subheader("📚 Alunos por Disciplina")
+#     if not df_mat.empty:
+#         fig_donut = px.pie(df_mat, values='qtd', names='disciplina', hole=0.4)
+#         fig_donut.update_layout(width=None)
+#         st.plotly_chart(fig_donut)
+#     else:
+#         st.info("Sem matrículas ativas.")
+
 with col_g2:
     st.subheader("📚 Alunos por Disciplina")
+    
     if not df_mat.empty:
-        fig_donut = px.pie(df_mat, values='qtd', names='disciplina', hole=0.4)
-        fig_donut.update_layout(width=None)
-        st.plotly_chart(fig_donut)
+        # --- MAPA DE CORES OFICIAIS KUMON ---
+        # Se aparecer uma disciplina nova, ela fica cinza padrão ('#DDDDDD')
+        cores_kumon_map = {
+            "Matemática": "#0037FF",  # Azul Oficial (Pantone 2915 C)
+            "Português": "#FFF700",   # Cinza Oficial (Pantone 430 C) - Para contraste
+            "Inglês": "#FF0000",      # Preto Oficial - Para destaque
+            "Japonês": "#00FF4C",     # Azul Claro (Tom sobre tom harmonioso)
+            "Kokugo": "#22FF00"      # Cinza Claro (Caso tenha)
+        }
+
+        fig_donut = px.pie(
+            df_mat, 
+            values='qtd', 
+            names='disciplina', 
+            hole=0.4,
+            color='disciplina',                 # Informa que a cor segue o nome da disciplina
+            color_discrete_map=cores_kumon_map  # Aplica o mapa definido acima
+        )
+        
+        # Ajustes visuais para ficar clean
+        fig_donut.update_traces(
+            textinfo='value',           # Mostra o número (ex: 45)
+            hoverinfo='label+percent',  # Ao passar o mouse mostra %
+            textfont_size=14
+        )
+        
+        # # Remove margens para o gráfico aproveitar o espaço
+        # fig_donut.update_layout(
+        #     width=None, 
+        #     margin=dict(t=0, b=0, l=0, r=0),
+        #     legend=dict(orientation="h", y=-0.1) # Legenda horizontal embaixo
+        # )
+        
+        st.plotly_chart(fig_donut, use_container_width=True)
+        
     else:
         st.info("Sem matrículas ativas.")

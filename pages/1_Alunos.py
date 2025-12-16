@@ -194,45 +194,46 @@ with tab1:
             elif cpf_clean and not g_svc.validar_cpf(cpf_clean):
                 st.error("CPF Inválido!")
             else:
-                try:
-                    # [ALTERADO] Busca o ID correspondente ao nome selecionado
-                    id_canal_selecionado = dict_canais.get(nome_canal_selecionado)
+                with st.spinner("Salvando alterações..."):
+                    try:
+                        # [ALTERADO] Busca o ID correspondente ao nome selecionado
+                        id_canal_selecionado = dict_canais.get(nome_canal_selecionado)
 
-                    # Prepara dados
-                    dados_aluno = {
-                        'nome': nome, 
-                        'responsavel': resp, 
-                        'cpf': g_svc.formatar_cpf(cpf_clean), 
-                        'id_canal': id_canal_selecionado # Envia o ID, não a string
-                    }
-                    
-                    # Chama Backend Seguro
-                    rps.realizar_matricula_completa(
-                        unidade_id=unidade_atual,
-                        dados_aluno=dados_aluno,
-                        lista_disciplinas=st.session_state['disciplinas_temp'],
-                        dia_vencimento=dia_venc,
-                        valor_taxa=v_taxa,
-                        campanha_ativa=params['campanha'] if params else False,
-                        data_matricula_dt=dt_matricula
-                    )
-                    
-                    st.session_state['disciplinas_temp'] = []
+                        # Prepara dados
+                        dados_aluno = {
+                            'nome': nome, 
+                            'responsavel': resp, 
+                            'cpf': g_svc.formatar_cpf(cpf_clean), 
+                            'id_canal': id_canal_selecionado # Envia o ID, não a string
+                        }
+                        
+                        # Chama Backend Seguro
+                        rps.realizar_matricula_completa(
+                            unidade_id=unidade_atual,
+                            dados_aluno=dados_aluno,
+                            lista_disciplinas=st.session_state['disciplinas_temp'],
+                            dia_vencimento=dia_venc,
+                            valor_taxa=v_taxa,
+                            campanha_ativa=params['campanha'] if params else False,
+                            data_matricula_dt=dt_matricula
+                        )
+                        
+                        st.session_state['disciplinas_temp'] = []
 
-                    # --- O PULO DO GATO (RESET) ---
-                    # Apenas incrementamos o contador.
-                    # Na próxima vez que o script rodar, todas as keys terão o número novo (ex: _1)
-                    # e o Streamlit criará inputs novinhos e vazios.
+                        # --- O PULO DO GATO (RESET) ---
+                        # Apenas incrementamos o contador.
+                        # Na próxima vez que o script rodar, todas as keys terão o número novo (ex: _1)
+                        # e o Streamlit criará inputs novinhos e vazios.
 
-                    show_success(f"Aluno {nome} cadastrado com sucesso!")
+                        show_success(f"Aluno {nome} cadastrado com sucesso!")
+                        
+                        st.session_state["aluno_form_id"] += 1
+                        
+                        time.sleep(1.5) # Tempo para ler a mensagem
+                        st.rerun()      # Recarrega a página para desenhar o formulário novo
                     
-                    st.session_state["aluno_form_id"] += 1
-                    
-                    time.sleep(1.5) # Tempo para ler a mensagem
-                    st.rerun()      # Recarrega a página para desenhar o formulário novo
-                    
-                except Exception as e:
-                    st.error(f"Erro ao matricular: {e}")
+                    except Exception as e:
+                        st.error(f"Erro ao matricular: {e}")
 
 # ==============================================================================
 # ABA 2: GERENCIAR ALUNOS
@@ -250,8 +251,9 @@ with tab2:
     termo = col_search.text_input("Nome ou CPF", placeholder="Digite para pesquisar...", key="search_term")
     filtro_status = col_filter.radio("Exibir:", ["Ativos", "Inativos", "Todos"], index=0, horizontal=True)
     
-    # Busca no Banco (Função nova)
-    df_grid = rps.listar_alunos_grid(unidade_atual, termo, filtro_status)
+    with st.spinner("🔄 Buscando alunos..."):
+        # Busca no Banco (Função nova)
+        df_grid = rps.listar_alunos_grid(unidade_atual, termo, filtro_status)
     
     # Exibe Métricas Rápidas
     total_filtrado = len(df_grid)
@@ -342,21 +344,23 @@ with tab2:
                 # NOVO CAMPO DE VENCIMENTO
                 edia_venc = c5.number_input("Dia Vencimento", 1, 31, value=dia_atual_bd, help="Altera para próximas cobranças e atuais (se não vencerem no passado)")
                 
+            
                 # Agora o botão será alcançado porque o código não quebrou antes
                 if st.form_submit_button("💾 Salvar Alterações Cadastrais"):
-                    try:
-                        # 1. Atualiza Dados Básicos
-                        ecanal_id = dict_canais[ecanal_nome]
-                        rps.atualizar_dados_aluno(aluno_id, enome, eresp, ecpf, ecanal_id)
-                        # 2. Atualiza Vencimento (Se mudou)
-                        if edia_venc != dia_atual_bd:
-                            rps.atualizar_dia_vencimento_aluno(aluno_id, edia_venc, unidade_atual)
-                            
-                        st.success("Cadastro atualizado com sucesso!")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
+                    with st.spinner("Salvando alterações..."):
+                        try:
+                            # 1. Atualiza Dados Básicos
+                            ecanal_id = dict_canais[ecanal_nome]
+                            rps.atualizar_dados_aluno(aluno_id, enome, eresp, ecpf, ecanal_id)
+                            # 2. Atualiza Vencimento (Se mudou)
+                            if edia_venc != dia_atual_bd:
+                                rps.atualizar_dia_vencimento_aluno(aluno_id, edia_venc, unidade_atual)
+
+                            st.success("Cadastro atualizado com sucesso!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar: {e}")
 
         # ---------------- ABA MATRÍCULAS ----------------
         with tab_mat:
